@@ -1,5 +1,16 @@
 package Filesys::SmbClientParser;
 
+# Module Filesys::SmbClientParser : provide function to reach 
+# Samba ressources
+# Copyright 2000 A.Barbet alian@alianwebserver.com.  All rights reserved.
+
+# $Log: SmbClientParser.pm,v $
+# Revision 0.2  2000/11/20 19:08:11  Administrateur
+# - Correct path of smbclient in new
+# - Correct arg when no password
+# - Correct error in synopsis
+#
+
 use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
 
@@ -7,7 +18,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = '0.01';
+$VERSION = ('$Revision: 0.2 $ ' =~ /(\d+\.\d+)/)[0];
 
 =head1 NAME
 
@@ -16,7 +27,7 @@ Filesys::SmbClientParser - Perl client to reach Samba ressources
 =head1 SYNOPSIS
 
   use Filesys::SmbClientParser;
-  my $smb = Filesys::SmbClientParser;
+  my $smb = new Filesys::SmbClientParser;
 
   # Set parameters for connect
   $smb->User('Administrateur');
@@ -94,9 +105,9 @@ sub new {
         bless $self, $class;     
         if (!$_[0])
         	{
-        	if (-x '/usr/bin/smblient') {$self->{SMBLIENT} = '/usr/bin/smblient';}
-        	elsif (-x '/usr/local/bin/smblient') {$self->{SMBLIENT} = '/usr/local/bin/smblient';}
-        	elsif (-x '/opt/bin/smbclient') {$self->{SMBLIENT} = '/usr/local/bin/smblient';}
+        	if (-x '/usr/bin/smbclient') {$self->{SMBLIENT} = '/usr/bin/smbclient';}
+        	elsif (-x '/usr/local/bin/smbclient') {$self->{SMBLIENT} = '/usr/local/bin/smbclient';}
+        	elsif (-x '/opt/bin/smbclient') {$self->{SMBLIENT} = '/opt/bin/smbclient';}
         	else {goto 'ERROR';}
         	}
         else 
@@ -135,7 +146,7 @@ sub GetShr
   	if (!$pass) {$pass=$self->Password;}
   	if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
   	elsif ($user) {$user = '-U '.$user}
-  	elsif (!$pass) {$pass = "-N" }   	
+  	elsif (!$pass) {$user = "-N" }
   	my @ret = ();
   	my $lookup = $self->{SMBLIENT}." $user -L \'\\\\$host\' -d0";
   	my ($err,@out) = $self->command($lookup,"getShr");
@@ -179,7 +190,7 @@ sub GetHosts
   	if (!$pass) {$pass=$self->Password;}
   	if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
   	elsif ($user) {$user = '-U '.$user}
-  	elsif (!$pass) {$pass = "-N" }   	  	
+  	elsif (!$pass) {$user = "-N" }
   	my @ret = ();
   	my $lookup = "$self->{SMBLIENT} $user -L \"$host\" -d0";
   	my ($err,@out) = $self->command($lookup,"getHosts");
@@ -292,7 +303,7 @@ sub cd
   	if (!$pass) {$pass=$self->Password;}
   	if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
   	elsif ($user) {$user = '-U '.$user}
-  	elsif (!$pass) {$pass = "-N" } 
+  	elsif (!$pass) {$user = "-N" }
 	if ($dir) 
 		{
 		my $args = $self->{SMBLIENT}." \"//$host/$share\" $user -d0 -c 'cd $dir' -D $self->{DIR}"; 		
@@ -325,7 +336,7 @@ sub dir
   	if (!$dir) {$dir=$self->{DIR};}
   	if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
   	elsif ($user) {$user = '-U '.$user}
-  	elsif (!$pass) {$pass = "-N" } 
+  	elsif (!$pass) {$user = "-N" }
   	my $lookup = $self->{SMBLIENT}." \"//$host/$share\" $user -d0 -c 'ls $dir/*'"; 
   	my ($err,@out) = $self->command($lookup,"dir");
   	foreach my $line ( @out ) 
@@ -462,7 +473,7 @@ sub tar
   	if (!$dir) {$dir=$self->{DIR};}
   	if (($user)&&($pass)) { $user = '-U \''.$user.'%'.$pass."'"; }
   	elsif ($user) {$user = '-U '.$user;}
-  	elsif (!$pass) {$pass = "-N";}
+  	elsif (!$pass) {$user = "-N" }
   	my $args = $self->{SMBLIENT}. " //$host/$share $user -d0 -D $dir -T$command $target";
   	$self->command($args,"-T$command $target");
 	}
@@ -491,7 +502,7 @@ sub operation
   	if (!$dir) {$dir=$self->{DIR};}
   	if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
   	elsif ($user) {$user = '-U '.$user;}
-  	elsif (!$pass) {$pass = "-N";}
+  	elsif (!$pass) {$user = "-N" }  	
   	my $args = $self->{SMBLIENT}.' //'.$host.'/'.$share.' '.$user." -d0 -c \"$command\" -D $dir";
   	return $self->command($args,$command);
 	}
