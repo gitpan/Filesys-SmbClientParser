@@ -12,6 +12,14 @@ use Filesys::SmbClientParser;
 $loaded = 1;
 print "ok 1\n";
 
+  #my $smb = new Filesys::SmbClientParser;
+  #$smb->User('Administrateur');
+  #$smb->Password('bam66boo');
+  #print $smb->Host('jupiter');
+  #print $smb->Share('homes');
+  #print $smb->mget('*',1);
+
+
 ######################### End of black magic.
 
 # Insert your test code below (better if it prints "ok 13"

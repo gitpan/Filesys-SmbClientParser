@@ -3,7 +3,3 @@ Revision history for Perl extension Filesys::SmbClientParser.
 0.01  Sat Nov 18 23:03:04 2000
 	- original version; created by h2xs 1.19
 
-0.2   2000/11/20 19:08:11
-	- Correct path of smbclient in new
-	- Correct arg when no password
-	- Correct error in synopsis
