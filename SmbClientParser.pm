@@ -5,6 +5,9 @@ package Filesys::SmbClientParser;
 # Copyright 2000 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 1.3  2001/04/19 17:01:10  alian
+# - Remove CR/LF from 1.2 version (thanks to Sean Sirutis <seans@go2net.com>)
+#
 # Revision 1.2  2001/04/15 15:20:50  alian
 # - Correct mput subroutine wrongly defined as mget
 # - Added DEBUG level
@@ -30,7 +33,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 1.2 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 1.3 $ ' =~ /(\d+\.\d+)/)[0];
 
 =head1 NAME
 
