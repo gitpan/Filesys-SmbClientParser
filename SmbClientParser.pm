@@ -5,6 +5,10 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.1  2002/04/11 23:39:34  alian
+# - Add du method  (thanks to Ben Scott <scotsman@CSUA.Berkeley.EDU>)
+# - Correct pwd method
+#
 # Revision 2.0  2002/01/25 11:46:41  alian
 # - Add IP parameter
 # - Add some quote for space in name usage
@@ -56,7 +60,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.0 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.1 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -439,10 +443,69 @@ sub pwd
   {
     my $self = shift;
     my $command = "pwd";
-    my ($error, @vars) = $self->operation($command,@_);    
-    foreach (@vars)
-      {if ($_ =~ /^\s*Current directory is \\\\.*?(\\.*)$/) {return $1; }}
+    if ($self->operation($command,@_))
+	{
+	  my $out = $self->LastResponse;
+	  foreach ( @$out )
+	    {
+		if ($_ =~m !^\s*Current directory is \\\\[^\\]*(\\.*)$!)
+		  {return $1; }
+	    }
+	}
     return undef;
+  }
+
+#------------------------------------------------------------------------------
+# du
+#------------------------------------------------------------------------------
+sub du
+  {
+    my $self = shift;
+    my $dir  = shift;
+    my $blk = shift || 'k';
+
+    my $blksize;
+    if ($blk !~ /\D/ && $blk > 0)
+      {
+        $blksize = $blk;
+      }
+    elsif ($blk =~ /^([kbsmg])/i)
+      {
+        $blksize = 512                  if ($blk =~ /b/i); ## Posix blocks
+        $blksize = 1024                 if ($blk =~ /k/i); ## 1Kbyte blocks
+        $blksize = 1024*512             if ($blk =~ /s/i); ## Samba blocks
+        $blksize = 1024*1024            if ($blk =~ /m/i); ## 1Mbyte blocks
+        $blksize = 1024*1024*1024       if ($blk =~ /g/i); ## 1Gbyte blocks
+      }
+    else
+      {die "Invalid argument for blocksize: $blk\n";}
+    $blksize ||= 1024;          ## Default to 1Kbyte blocks
+
+    $dir =~ s#(.*)(^|/)\.(/|$)(.*)#$1$2$4#g;
+    $dir = $self->{DIR} unless ($dir);
+
+    my $cmd = "du $dir/*";
+    $self->operation($cmd,undef,@_) || return undef;
+    my $out = $self->LastResponse;
+    my $rec = {};
+    foreach my $line ( @$out )
+      {
+        if ($line =~ /^\s*(\d+)\D+(\d+)\D+(\d+)\D+$/)
+          {
+            my $blksz = (defined $2) ? $2 : 512 * 1024;
+		$rec->{blks}  = $1 * ($blksz / $blksize);
+            $rec->{ublks} = ($1 - $3) * ($blksz / $blksize);
+            $rec->{fblks} = $3 * ($blksz / $blksize);
+            $rec->{blksz} = $blksize;
+          }
+        if ($line =~ /^\D+:\s+(\d+)\s*$/)
+          {
+            $rec->{usage} = $1 / $blksize;
+          }
+      }
+
+    if (wantarray()) { return values %$rec; }
+    else { return $rec->{usage}; }
   }
 
 #------------------------------------------------------------------------------
@@ -967,7 +1030,50 @@ can be in differnet directories.  It returns a return value.
 =item pwd()
 
 Returns the present working directory on the remote system.  If
-there is an error it returns undef.
+there is an error it returns undef. If you are on smb://jupiter/doc/mysql/,
+pwd return \doc\mysql\.
+
+=item du([$path, $unit)
+
+If no path is given current directory is used.
+
+Unit can be in [kbsmg].
+
+=over
+
+=item b
+
+Posix blocks
+
+=item k
+
+1Kbyte blocks
+
+=item s
+
+Samba blocks
+
+=item m
+
+1Mbyte blocks
+
+=item g
+
+1Gbyte blocks
+
+=back
+
+If no unit given, k is used (1kb bloc)
+
+In scalar context, return the total size in units for files in 
+current directory.
+
+In array context, return a list with :
+total size in units for files in partition of share,
+total size in units for files in directory,
+size left in units for partition of share,
+block size used in bytes (unit),
+total size in units for files in partition of share
 
 =item mget($file,[$recurse])
 

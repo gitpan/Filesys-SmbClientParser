@@ -6,7 +6,7 @@
 # Change 1..1 below to 1..last_test_to_print .
 # (It may become useful if the test is moved to ./t subdirectory.)
 
-BEGIN { $| = 1; print "1..7\n"; }
+BEGIN { $| = 1; print "1..20\n"; }
 END {print "not ok 1 Load test\n" unless $loaded;}
 use Filesys::SmbClientParser;
 $loaded = 1;
@@ -21,12 +21,13 @@ print "ok 1 Load test\n";
 
 exit(0) unless (-e ".m");
 
-my $total_test = 9;
+my $total_test = 20;
 my $courant = 1;
 use POSIX;
 open(F,".m") || die "Can't read .m\n";
 my $l = <F>; chomp($l); 
 my @l = split(/\t/, $l);
+my $sha = $l[1];
 my $smb = new Filesys::SmbClientParser
   (
    undef,
@@ -79,16 +80,72 @@ $smb->get($f."_2")
   ? (++$courant && print "ok 7 Get file\n")
   : (print "not ok 7 Get file\n");
 
+# Du the directory
+($smb->du =~m!^0.0087!)
+  ? (++$courant && print "ok 8 du\n")
+  : (print "not ok 8 du:", $smb->du, " ", $smb->err, "\n");
+
 # Unlink a file
 $smb->del($f.'_2')
-  ? ( ++$courant && print "ok 8 Unlink file\n")
-  : (print "not ok 8 Unlink file ", $smb->err, "\n");
+  ? ( ++$courant && print "ok 9 Unlink file\n")
+  : (print "not ok 9 Unlink file ", $smb->err, "\n");
 
 # Erase this directory
 $smb->cd("..");
 $smb->rmdir("toto")
-  ? ( ++$courant && print "ok 9 Rm directory\n")
-  : ( print "not ok 9 Rm directory ", $smb->err, "\n");
+  ? ( ++$courant && print "ok 10 Rm directory\n")
+  : ( print "not ok 10 Rm directory ", $smb->err, "\n");
+
+# Control current directory
+($smb->pwd eq '\\'.$sha.'\\' )
+  ? ( ++$courant && print "ok 11 Pwd\n")
+  : ( print "not ok 11 Pwd ", $smb->pwd, $smb->err, "\n");
+
+# Create a directory with (
+$smb->mkdir("toto(tata")
+  ? ( ++$courant && print "ok 12 Create directory with ( in name\n")
+  : (print "not ok 12 Create directory: ", $smb->err, "\n");
+
+# Try to recreate it
+$smb->mkdir("toto(tata")
+  ? (print "not ok 13 Create existant directory: ", $smb->err, "\n")
+  : ( ++$courant && print "ok 13 Create existant directory\n");
+
+# Chdir this dir
+$smb->cd("toto(tata")
+  ? ( ++$courant && print "ok 14 Chdir directory with ( in name\n")
+  : (print "not ok 14 Chdir directory: ", $smb->err, "\n");
+
+# Control current directory
+($smb->pwd eq '\\'.$sha.'\\toto(tata\\')
+  ? ( ++$courant && print "ok 15 Pwd with ( in name\n")
+  : ( print "not ok 15 Pwd ", $smb->pwd, $smb->err, "\n");
+
+# Erase this directory
+$smb->cd("..");
+$smb->rmdir("toto(tata")
+  ? ( ++$courant && print "ok 16 Rm directory with ( in name\n")
+  : ( print "not ok 16 Rm directory ", $smb->err, "\n");
+
+# Erase unexistant directory
+$smb->rmdir("toto(tata")
+  ? ( print "not ok 17 Rm unexistant directory ", $smb->err, "\n")
+  : ( ++$courant && print "ok 17 Rm unexistant directory\n");
+
+# Unlink unexistant file
+$smb->del("toto(tata")
+  ? ( print "not ok 18 Rm unexistant file ", $smb->err, "\n")
+  : ( ++$courant && print "ok 18 Rm unexistant file\n");
+
+# Chdir unexistant directory
+$smb->cd("toto(tata")
+  ? ( print "not ok 19 Chdir unexistant directory ", $smb->err, "\n")
+  : ( ++$courant && print "ok 19 Chdir unexistant directory\n");
+
+# Get a file
+$smb->get($f."toto(tata") 
+  ? ( print "not ok 20 Get unexistant file ", $smb->err, "\n")
+  : ( ++$courant && print "ok 20 Get unexistant file\n");
 
 # Final result
 ($courant == $total_test) 
@@ -107,5 +164,5 @@ print "WORKGROUP:\n\tWg\tMaster\n";
 foreach ($smb->GetGroups) {print "\t",$_->{name},"\t",$_->{master},"\n";}
 print "HOSTS:\n\tName\t\tComment\n";
 foreach ($smb->GetHosts)  {print "\t",$_->{name},"\t\t",$_->{comment},"\n";}
-print "ON ",$smb->Host," I'VE FOUND SHARE:\n\tName\n";
+print "ON ",$smb->Host," i've found SHARE:\n\tName\n";
 foreach ($smb->GetShr)    {print "\t",$_->{name},"\n";}

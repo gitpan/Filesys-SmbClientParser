@@ -1,5 +1,9 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
+2.1  2002/04/11 23:39:34  alian
+ - Add du method  (thanks to Ben Scott <scotsman@CSUA.Berkeley.EDU>)
+ - Correct pwd method
+
 2.0  2002/01/25 11:46:41  alian
  - Add IP parameter
  - Add some quote for space in name usage
