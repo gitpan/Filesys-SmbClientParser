@@ -6,11 +6,8 @@ use Test::More;
 plan tests => 3;
 use Filesys::SmbClientParser;
 
-my $cmd = 'ln -s `which smbclient` /tmp/smbclient';
-system($cmd);
-my $ical = Filesys::SmbClientParser->new("/tmp/smbclient"); # create an object
+my $ical = Filesys::SmbClientParser->new("/bin/ls"); # create an object
 ok( defined $ical,"defined instance" );         # check that we got something
 ok( $ical->isa('Filesys::SmbClientParser'),
   'Filesys::SmbClientParser instance');   #       and it's the right class
-is($ical->{SMBLIENT},"/tmp/smbclient", "Set smbclient with new");
-unlink('/tmp/smbclient') if (-e '/tmp/smbclient');
+is($ical->{SMBLIENT},"/bin/ls", "Set smbclient with new");

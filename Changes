@@ -1,6 +1,11 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
-Revision 2.4  2002/11/08 23:51:19  alian
+2.5  2002/11/12 18:53:44  alian
+ - Update POD documentation
+ - Correct t/02?.pl
+ - Add t/03?.pl
+
+2.4  2002/11/08 23:51:19  alian
  - Correct a bug that didn't set smbclient path when pass as arg of new.
  (thanks to Andreas Dahl for report and patch).
  - Correct a bug in error parsing that disable use of file or dir with

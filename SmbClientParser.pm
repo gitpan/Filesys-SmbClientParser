@@ -5,6 +5,9 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.5  2002/11/12 18:53:44  alian
+# Update POD documentation
+#
 # Revision 2.4  2002/11/08 23:51:19  alian
 # - Correct a bug that didn't set smbclient path when pass as arg of new.
 # (thanks to Andreas Dahl for report and patch).
@@ -46,7 +49,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.4 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.5 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -869,50 +872,51 @@ mook@cs.utwente.nl on smb2www project.
 
 =over
 
-=item new([$path_of_smbclient], [%param])
+=item new [PATH_OF_SMBCLIENT], [HASH_OF_PARAM]
 
 Create a new FileSys::SmbClientParser instance. Search bin smbclient,
-and fail if it can't find it in /usr/bin, /usr/local/bin, /opt/bin or
-/usr/local/samba/bin/.
-If it's on another directory, use parameter $path_of_smbclient.
+and fail if it can't find it in standard location.
+(ENV{PATH}, /usr/bin, /usr/local/bin, /opt/bin or /usr/local/samba/bin/).
+If it's on another directory, use parameter PATH_OF_SMBCLIENT.
 
-%param is a hash with key user,host,password,workgroup,ipadress,share
+HASH_OF_PARAM is a hash with key user,host,password,workgroup,ipadress,share
 
-=item Host([$hostname])
+=item Host [HOSTNAME]
 
-Set or get the remote host to be used to $hostname.
+Get or set the remote host to be used to HOSTNAME.
 
-=item User([$username])
+=item User [USERNAME]
 
-Set or get the username to be used to $username.
+Get or set the username to be used to USERNAME.
 
-=item Share([$sharename])
+=item Share [SHARENAME]
 
-Set or get the share to be used on the remote host to $sharename.
+Get or set the share to be used on the remote host to SHARENAME.
 
-=item Password([$password])
+=item Password [PASSWORD]
 
-Set or get the password to be used
+Get or set the password to be used to PASSWORD.
 
-=item Workgroup([$wg])
+=item Workgroup [WORKGROUP]
 
-Set or get the workgroup to be used. (See -W switch in smbclient man page)
+Get or set the workgroup to be used to WORKGROUP.
+See -W switch in smbclient man page.
 
-=item IpAdress([$ip])
+=item IpAdress [IP]
 
-Set or get the IP adress of the server to contact (See -I switch in smbclient 
-man page)
+Set or get the IP adress of the server to contact to IP
+See -I switch in smbclient man page.
 
-=item Debug([$debug])
+=item Debug [LEVEL]
 
 Set or get the debug verbosity
 
     0 = no output
     1+ = more output
 
-=item Auth($auth_file)
+=item Auth AUTH_FILE
 
-Use the file $auth_file for username and password.
+Use the file AUTH_FILE for username and password.
 This uses User and Password instead of -A to be backwards
 compatible.
 
@@ -922,35 +926,26 @@ compatible.
 
 =over
 
-=item GetGroups([$host],[$user],[$pass],[$wg],[$ip])
+=item GetGroups [HOSTNAME, USER, PASSWORD, WORKGROUP, IP]
 
 If no parameters is given, field will be used.
 
-Return an array with sorted workgroup listing
+Return an array with sorted workgroup listing that contains hashes; 
+keys: name, master
 
-Syntax: @output = $smb->GetGroups
-
-array contains hashes; keys: name, master
-
-=item GetShr([$host],[$user],[$pass],[$wg],[$ip])
+=item GetShr [HOSTNAME, USER, PASSWORD, WORKGROUP, IP]
 
 If no parameters is given, field will be used.
 
-Return an array with sorted share listing
+Return an array with sorted share listing, that contains hashes;
+keys: name, type, comment
 
-Syntax: @output = $smb->GetShr
+=item GetHosts [HOSTNAME, USER, PASSWORD, WORKGROUP, IP]
 
-array contains hashes; keys: name, type, comment
+Return an array with sorted host listing, that contains hashes; 
+keys: name, comment
 
-=item GetHosts([$host],[$user],[$pass],[$wg],[$ip])
-
-Return an array with sorted host listing
-
-Syntax: @output = $smb->GetHosts
-
-array contains hashes; keys: name, comment
-
-=item sendWinpopupMessage($dest,$text)
+=item sendWinpopupMessage DEST, TEXT
 
 This method allows you to send messages, using the "WinPopup" protocol,
 to another computer. If the receiving computer is running WinPopup the
@@ -962,8 +957,8 @@ The message is also automatically truncated if the message is over
 
 Parameters :
 
- $dest: name of host or user to send message
- $text: text to send
+DEST: name of host or user to send message
+TEXT: text to send
 
 =back
 
@@ -971,69 +966,58 @@ Parameters :
 
 =over
 
-=item cd [$dir] [$host ,$user, $pass, $wg, $ip]
+=item cd [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-
-cd [directory name]
-If "directory name" is specified, the current working directory on the server
+If DIR is specified, the current working directory on the server
 will be changed to the directory specified. This operation will fail if for
 any reason the specified directory is inaccessible. Return list.
 
 If no directory name is specified, the current working directory on the server
 will be reported.
 
-=item dir [$dir] [$host ,$user, $pass, $wg, $ip]
+=item dir [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-Return an array with sorted dir and filelisting
+Return an array with sorted dir and filelisting that contains hashes; 
+keys: name, attr, size, date
 
-Syntax: @output = $smb->dir (host,share,dir,user,pass)
+=item mkdir NAME, [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-Array contains hashes; keys: name, attr, size, date
+Create a new directory on the server with the specified name NAME
 
-=item mkdir($masq, [$dir, $host ,$user, $pass, $wg, $ip])
+=item rmdir NAME, [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-mkdir <mask>
-Create a new directory on the server (user access privileges
-permitting) with the specified name.
+Remove the specified directory NAME from the server. NAME can be a pattern.
 
-=item rmdir($masq, [$dir, $host ,$user, $pass, $wg, $ip])
+=item get FILE, [TARGET, DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-Remove the specified directory (user access privileges
-permitting) from the server.
-
-=item get($file, [$target], [$dir, $host ,$user, $pass, $wg, $ip])
-
-Gets the file $file, using $user and $pass, to $target on courant SMB
+Gets the file FILE, using USER and PASSWORD, to TARGET on current SMB
 server and return the error code.
-If $target is unspecified, courant directory will be used
+
+If TARGET is unspecified, current directory will be used
 For use STDOUT, set target to '-'.
 
-Syntax: $smb->get ($file,$target,$dir)
+=item del FILE, [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-=item del($mask, [$dir, $host ,$user, $pass, $wg, $ip])
-
-del <mask>
 The client will request that the server attempt to delete
-all files matching "mask" from the current working directory
+all files matching FILE from the current working directory
 on the server
 
-=item rename($source, $target, [$dir, $host ,$user, $pass, $wg, $ip])
+=item rename SOURCE, TARGET, [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-rename source target
-The file matched by mask will be moved to target.  These names
-can be in differnet directories.  It returns a return value.
+The file matched by mask SOURCE will be moved to TARGET.  These names
+can be in different directories.  It returns a return value.
 
-=item pwd()
+=item pwd
 
 Returns the present working directory on the remote system.  If
 there is an error it returns undef. If you are on smb://jupiter/doc/mysql/,
 pwd return \doc\mysql\.
 
-=item du([$path, $unit)
+=item du [DIR, UNIT]
 
 If no path is given current directory is used.
 
-Unit can be in [kbsmg].
+UNIT can be in [kbsmg].
 
 =over
 
@@ -1068,9 +1052,9 @@ In array context, return a list with total size in units for files in
 directory, size left in partition of share, block size used in bytes,
 total size of partition of share.
 
-=item mget($file,[$recurse])
+=item mget FILE, [RECURSE]
 
-Gets file(s) $file on current SMB server,directory and return
+Gets file(s) FILE on current SMB server,directory and return
 the error code. If multiple file, push an array ref as first parameter
 or pattern * or file separated by space
 
@@ -1081,16 +1065,14 @@ Syntax:
   $smb->mget (\@file); #or
   $smb->mget ("*",1);
 
-=item put$($orig,[$file],[$dir, $host ,$user, $pass, $wg, $ip])
+=item put ORIG,[FILE, DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-Puts the file $orig to $file, using $user and $pass on courant SMB
+Puts the file $orig to $file, using USER and PASSWORD on courant SMB
 server and return the error code. If no $file specified, use same 
 name on local filesystem.
 If $orig is unspecified, STDIN is used (-).
 
-Syntax: $smb->PutFile ($host,$share,$file,$user,$pass,$orig)
-
-=item mput($file,[$recurse])
+=item mput FILE, [RECURSE]
 
 Puts file(s) $file on current SMB server,directory and return
 the error code. If multiple file, push an array ref as first parameter
@@ -1109,14 +1091,13 @@ Syntax:
 
 =over
 
-=item tar($command, $target, [$dir, $host ,$user, $pass, $wg, $ip])
+=item tar($command, $target, [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP])
 
-Execute TAR commande on //$host/$share/$dir, using $user and $pass
+Execute TAR commande on //HOSTNAME/$share/DIR, using USER and PASSWORD
 and return the error code. $target is name of tar file that will be used
 
-Syntax: $smb->tar ($command,'/tmp/myar.tar') where command 
-in ('x','c',...) 
-See smbclient man page
+Syntax: $smb->tar ($command,'/tmp/myar.tar') where command is in ('x','c',...).
+See smbclient man page for more details.
 
 =back
 
@@ -1150,9 +1131,15 @@ sort an array of hashes by $_->{name} (for GetSMBDir et al)
 
 =back
 
+=head1 VERSION
+
+$Revision: 2.5 $
+
 =head1 TODO
 
 Write a wrapper for ActiveState release on win32
+
+Correct this documentation with a good english ...
 
 =head1 AUTHOR
 
