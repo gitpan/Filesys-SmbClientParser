@@ -2,9 +2,25 @@ package Filesys::SmbClientParser;
 
 # Module Filesys::SmbClientParser : provide function to reach
 # Samba ressources
-# Copyright 2000 A.Barbet alian@alianwebserver.com.  All rights reserved.
+# Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.0  2002/01/25 11:46:41  alian
+# - Add IP parameter
+# - Add some quote for space in name usage
+# (tks to Mike Rosack for his BuzzSearch version)
+# - Update POD documentation
+# - Update all return code error: undef is always return if error,
+# and method err return last string error find.
+# This is why I pass to 2.0 release.
+# - Correct no error code in mkdir, delete
+# - Debug GetGroups method
+# - Debug case if share is defined in GetShare or GetHosts
+# - Add hash parameter to constructor
+#
+# Revision 1.5  2002/01/22 23:00:04  alian
+# - Correct a bug in workgroup parameter (tks to pedro@jazznet.pt for patch)
+#
 # Revision 1.4  2001/05/30 07:58:42  alian
 # - Add workgroup parameter (tkx to <ClarkJP@nswccd.navy.mil> for suggestion)
 # - Correct a bug with directory (double /) tks to  <erranp@go2net.com>
@@ -40,7 +56,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 1.4 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.0 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -50,7 +66,9 @@ sub new
     my $class = shift;
     my $self = {};
     bless $self, $class;
-    if (!$_[0])
+    # Search path of smbclient
+    my $pat = shift;
+    if (!$pat)
       {
 	if (-x '/usr/bin/smbclient') 
 	  {$self->{SMBLIENT} = '/usr/bin/smbclient';}
@@ -58,13 +76,23 @@ sub new
 	  {$self->{SMBLIENT} = '/usr/local/bin/smbclient';}
 	elsif (-x '/opt/bin/smbclient') 
 	  {$self->{SMBLIENT} = '/opt/bin/smbclient';}
+	elsif (-x '/usr/local/samba/bin/smbclient') 
+	  {$self->{SMBLIENT} = '/usr/local/samba/bin/smbclient';}
 	else {goto 'ERROR';}
       }
     else
       {
-	if (-x $_[0]) {$self->{SMBLIENT}=$_[0];}
-	else {goto 'ERROR';}
+	  if (-x $pat) {$self->{SMBLIENT}=$pat;}
+	  else {goto 'ERROR';}
       }
+    # fix others parameters
+    my %ref = @_;
+    $self->Host($ref{host}) if ($ref{host});
+    $self->User($ref{user}) if ($ref{user});
+    $self->Share($ref{share}) if ($ref{share});
+    $self->Password($ref{password}) if ($ref{password});
+    $self->Workgroup($ref{workgroup}) if ($ref{workgroup});
+    $self->IpAdress($ref{ipadress}) if ($ref{ipadress});
     $self->{DIR}='/';
     $self->{"DEBUG"} = 0;
     return $self;
@@ -80,6 +108,11 @@ sub User { if ($_[1]) { $_[0]->{USER}=$_[1];} return $_[0]->{USER};}
 sub Share {if ($_[1]) {$_[0]->{SHARE}=$_[1];} return $_[0]->{SHARE};}
 sub Password {if ($_[1]) {$_[0]->{PASSWORD}=$_[1];} return $_[0]->{PASSWORD};}
 sub Workgroup {if ($_[1]) {$_[0]->{WG}=$_[1];} return $_[0]->{WG};}
+sub IpAdress {if ($_[1]) {$_[0]->{IP}=$_[1];} return $_[0]->{IP};}
+sub LastResponse 
+  {if ($_[1]) {$_[0]->{LAST_REP}=$_[1];} return $_[0]->{LAST_REP};}
+sub err 
+  {if ($_[1]) {$_[0]->{LAST_ERR}=$_[1];} return $_[0]->{LAST_ERR};}
 
 #------------------------------------------------------------------------------
 # Debug mode
@@ -115,18 +148,30 @@ sub Auth
       }
   }
 
+
+#------------------------------------------------------------------------------
+# _List
+#------------------------------------------------------------------------------
+sub _List
+  {
+    my ($self, $host, $user, $pass, $wg, $ip) = @_;
+    if (!$host) {$host=$self->Host;} undef $self->{HOST};
+    my $tmp = $self->Share; undef $self->{SHARE};
+    my $commande = "-L '\\\\$host' ";
+    $self->commande($commande, undef, undef, undef, $user, $pass, $wg, $ip)
+	|| return undef;
+    $self->Host($host); $self->Share($tmp);
+    return $self->LastResponse;
+  }
+
 #------------------------------------------------------------------------------
 # GetShr
 #------------------------------------------------------------------------------
 sub GetShr
   {
-    my ($self,$host,$user,$pass,$wg) = @_;
-    if (!$host) {$host=$self->Host;}
-    undef $self->{HOST};
-    my $commande = "-L '\\\\$host'";
-    my ($err,@out) = $self->commande($commande, undef, undef, 
-				      undef, $user, $pass, $wg);
-    $self->{HOST}=$host;
+    my ($self, $host, $user, $pass, $wg, $ip) = @_;
+    my $out = _List(@_) || return undef;
+    my @out = @$out;
     my @ret = ();
     my $line = shift @out;
     while ( (not $line =~ /^\s+Sharename/) and ($#out >= 0) ) 
@@ -157,14 +202,9 @@ sub GetShr
 #------------------------------------------------------------------------------
 sub GetHosts
   {
-    my ($self,$host,$user,$pass,$wg) = @_;
-    if (!$host) {$host=$self->Host;}
-    undef $self->{HOST};
-    my $commande = "-L $host";
-    my ($err,@out) = $self->commande($commande, undef, undef, 
-				      undef, $user, $pass, $wg);
-    $self->{HOST}=$host;
-
+    my ($self,$host,$user,$pass,$wg,$ip) = @_;
+    my $out = _List(@_) || return undef;
+    my @out = @$out;
     my @ret = ();
     my $line = shift @out;
 
@@ -194,21 +234,19 @@ sub GetHosts
 #------------------------------------------------------------------------------
 sub GetGroups
   {
-  my ($self,$host)=@_;
+    my ($self,$host,$user,$pass,$wg,$ip) = @_;
+    my $out = _List(@_) || return undef;
     my @ret = ();
-    my $lookup = $self->{SMBLIENT}." -L \"$host\" -d0";
-    my ($err,@out) = $self->command($lookup,"getGroups");
+    my @out = @$out;
     my $line = shift @out;
-  while ((not $line =~ /^This machine has a workgroup list/) and ($#out >= 0) )
-    {$line = shift @out;}
+    while ((not $line =~ /Workgroup/) and	($#out >= 0) ) 
+	{$line = shift @out;}
     if ($#out >= 0)
       {
         $line = shift @out;
-        $line = shift @out;
-        $line = shift @out;
-        $line = shift @out;
         while ((not $line =~ /^$/) and ($#out >= 0) )
           {
+		$line = shift @out;
             if ( $line =~ /^\t([\S ]*\S) {2,}(\S[\S ]*)$/ )
               {
               my $rec = {};
@@ -216,7 +254,6 @@ sub GetGroups
               $rec->{master} = $2;
               push @ret, $rec;
               }
-            $line = shift @out;
           }
       }
     return sort byname @ret;
@@ -229,7 +266,7 @@ sub sendWinpopupMessage
   {
     my ($self, $dest, $text) = @_;
     my $args = "/bin/echo \"$text\" | ".$self->{SMBLIENT}." -M $dest";
-    $self->command($args,"winpopup message");
+    return $self->command($args,"winpopup message");
   }
 
 #------------------------------------------------------------------------------
@@ -241,14 +278,17 @@ sub cd
     my $dir  = shift;
     if ($dir)
       {
-	my $commande = "cd $dir";
-	my ($err,@out) = $self->operation($commande, undef, @_);
+	my $commande;
+	if ($dir ne ".."){$commande = "cd \"$dir\""; }
+	else { $commande = "cd .."; }
+	$self->operation($commande, undef, @_) || return undef;
 	if ($dir=~/^\//) {$self->{DIR}=$dir;}
 	elsif ($dir=~/^..$/) 
 	  {if ($self->{DIR}=~/(.*\/)(.+?)$/) {$self->{DIR}=$1;}}
 	elsif($self->{DIR}=~/\/$/){ $self->{DIR}.=$dir; }
 	else{$self->{DIR}.='/'.$dir;}
-      }
+	return 1;
+    }
     else {return $self->{DIR};}
   }
 
@@ -262,8 +302,9 @@ sub dir
     my (@dir,@files);
     if (!$dir) {$dir=$self->{DIR};}
     my $cmd = "ls $dir/*";
-    my ($err,@out) = $self->operation($cmd,undef,@_);
-    foreach my $line ( @out )
+    $self->operation($cmd,undef,@_) || return undef;
+    my $out = $self->LastResponse;
+    foreach my $line ( @$out )
       {
         if ($line =~ /^  ([\S ]*\S|[\.]+) {5,}([HDRSA]+) +([0-9]+)  (\S[\S ]+\S)$/g)
           {
@@ -287,7 +328,7 @@ sub dir
       }
     my @ret = sort byname @dir;
     @files = sort byname @files;
-    foreach my $line ( @files ) {push @ret, $line;}
+    @ret= (@ret, @files );
     return @ret;
   }
 
@@ -299,7 +340,7 @@ sub mkdir
     my $self = shift;
     my $masq = shift;
     my $commande = "mkdir $masq";
-    $self->operation($commande,@_);
+    return $self->operation($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -365,7 +406,7 @@ sub del
     my $self = shift;
     my $masq = shift;
     my $commande = "del $masq";
-    $self->operation($commande,@_);
+    return $self->operation($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -376,7 +417,7 @@ sub rmdir
     my $self = shift;
     my $masq = shift;
     my $commande = "rmdir $masq";
-    $self->operation($commande,@_);
+    return $self->operation($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -388,8 +429,7 @@ sub rename
     my $source = shift;
     my $target = shift;
     my $command = "rename $source $target";
-    my ($rc) = $self->operation($command,@_);
-    return $rc;
+    return $self->operation($command,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -416,8 +456,8 @@ sub tar
     my $dir = shift || $self->{DIR}; 
     $self->{DIR}=undef;
     my $cmd = " -T$command $target $dir";
-    $self->commande($cmd,undef,@_);
     $self->{DIR}=$dir;
+    return $self->commande($cmd,undef,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -425,27 +465,34 @@ sub tar
 #------------------------------------------------------------------------------
 sub operation
   {
-    my ($self,$command,$dir, $host, $share, $user, $pass, $wg) = @_;
+    my ($self,$command,$dir, $host, $share, $user, $pass, $wg, $ip) = @_;
     if (!$user) {$user=$self->User;}
     if (!$host) {$host=$self->Host;}    
     if (!$share){$share=$self->Share;}
     if (!$pass) {$pass=$self->Password;}
     if (!$dir) {$dir=$self->{DIR};}
     if (!$wg) {$wg = $self->Workgroup;}
+    if (!$ip) {$ip=$self->IpAdress; }
+    my $debug=' ';
+    $debug = " -d ".$self->{DEBUG}.' ' if ($self->{DEBUG});
     # Workgroup
-    if ($wg) {$wg = "-W ".$wg;}
-    else {$wg = ' ';}
+    ($wg ? ($wg = "-W ".$wg." ") : ($wg = ' '));
+    # Ip adress of server
+    ($ip ? ($ip = "-I ".$ip." ") : ($ip = ' '));
+    # Path
+    ($dir ? ($dir=' -D "'.$dir.'"') : ($dir= ' '));
     # User / Password
-    if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
-    elsif ($user) {$user = '-U '.$user;}
-    elsif (!$pass) {$user = "-N" }
+    if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass.' '; }
+    elsif ($user) {$user = '-U '.$user.' ';}
+    elsif (!$pass) {$user = "-N " }
     # Server/share
     my $path=' ';
     if ($host) {$host='//'.$host; $path.=$host; }
     if ($share) {$share='/'.$share;$path.=$share; }
     $path.=' ';
     # Final command
-    my $args = $self->{SMBLIENT}.$path.$user." -d0 -c '$command' -D $dir";
+    my $args = $self->{SMBLIENT}.$path.$user.$wg.$ip.
+	" -d0 -c '$command' ".$dir;
     return $self->command($args,$command);
   }
 
@@ -454,30 +501,34 @@ sub operation
 #------------------------------------------------------------------------------
 sub commande
   {
-    my ($self,$command,$dir, $host, $share, $user, $pass, $wg) = @_;
+    my ($self,$command,$dir, $host, $share, $user, $pass, $wg, $ip) = @_;
     if (!$user) {$user=$self->User;}
     if (!$host) {$host=$self->Host;}    
     if (!$share){$share=$self->Share;}
     if (!$pass) {$pass=$self->Password;}
     if (!$dir) {$dir=$self->{DIR};}
     if (!$wg) {$wg=$self->Workgroup;}
+    if (!$ip) {$ip=$self->IpAdress; }
+    my $debug=' ';
+    $debug = " -d ".$self->{DEBUG}.' ' if ($self->{DEBUG});
+    # Ip adress of server
+    ($ip ? ($ip = "-I ".$ip." ") : ($ip = ' '));
     # Workgroup
-    if ($wg) {$wg = "-W ".$wg;}
-    else {$wg = ' ';}
+    ($wg ? ($wg = "-W ".$wg." ") : ($wg = ' '));
+    # Path
+    (($dir) ? ($dir=' -D "'.$dir.'"') : ($dir= ' '));
     # User / Password
-    if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass; }
-    elsif ($user) {$user = '-U '.$user;}
-    elsif (!$pass) {$user = "-N" }
+    if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass.' '; }
+    elsif ($user) {$user = '-U '.$user.' ';}
+    elsif (!$pass) {$user = "-N " }
     # Server/Share
     my $path=' ';
     if ($host) {$host='//'.$host; $path.=$host; }
     if ($share) {$share='/'.$share;$path.=$share; }
     $path.=' ';
-    # Path
-    if ($dir) {$dir=' -D '.$dir;}
-    else {$dir= ' ';}    
     # Final command
-    my $args = $self->{SMBLIENT}.$path.$user." -d0 ".$command.$dir;
+    my $args = $self->{SMBLIENT}.$path.$user.$wg.$ip.
+	" -d0 ".$command.$dir;
     return $self->command($args,$command);
   }
 
@@ -493,173 +544,177 @@ sub command
   {
     my ($self,$args,$command)=@_;
     if ($self->{"DEBUG"} > 0)
-      {
-	print "$args\n";
-      }
-    my $error=0;
+      { print " ==> SmbClientParser::command $args\n"; }
+    my $er;
     my @var = `$args`;# or die "system $args failed: $?,$!\n";
     my $var=join(' ',@var ) ;
     if ($var=~/ERRnoaccess/)   
-      {print "Error $command: permission denied\n";$error=1;}
+      {$er="Cmd $command: permission denied";}
     elsif ($var=~/ERRbadfunc/)   
-      {print "Error $command: Invalid function.\n";$error=1;}
+      {$er="Cmd $command: Invalid function.";}
     elsif ($var=~/ERRbadfile/)   
-      {print "Error $command: File not found.\n";$error=1;}
+      {$er="Cmd $command: File not found.";}
     elsif ($var=~/ERRbadpath/)   
-      {print "Error $command: Directory invalid.\n";$error=1;}
+      {$er="Cmd $command: Directory invalid.";}
     elsif ($var=~/ERRnofids/)   
-      {print "Error $command: No file descriptors available\n";$error=1;}
+      {$er="Cmd $command: No file descriptors available";}
     elsif ($var=~/ERRnoaccess/)   
-      {print "Error $command: Access denied.\n";$error=1;}
+      {$er="Cmd $command: Access denied.";}
     elsif ($var=~/ERRbadfid/)   
-      {print "Error $command: Invalid file handle.\n";$error=1;}
+      {$er="Cmd $command: Invalid file handle.";}
     elsif ($var=~/ERRbadmcb/)   
-      {print "Error $command: Memory control blocks destroyed.\n";$error=1;}
+      {$er="Cmd $command: Memory control blocks destroyed.";}
     elsif ($var=~/ERRnomem/)   
-      {print "Error $command: Insufficient server memory to perform the requested function.\n";$error=1;}
+      {$er="Cmd $command: Insufficient server memory to perform the requested function.";}
     elsif ($var=~/ERRbadmem/)   
-      {print "Error $command: Invalid memory block address.\n";$error=1;}
+      {$er="Cmd $command: Invalid memory block address.";}
     elsif ($var=~/ERRbadenv/)   
-      {print "Error $command: Invalid environment.\n";$error=1;}
+      {$er="Cmd $command: Invalid environment.";}
     elsif ($var=~/ERRbadformat/)   
-      {print "Error $command: Invalid format.\n";$error=1;}
+      {$er="Cmd $command: Invalid format.";}
     elsif ($var=~/ERRbadaccess/)   
-      {print "Error $command: Invalid open mode.\n";$error=1;}
+      {$er="Cmd $command: Invalid open mode.";}
     elsif ($var=~/ERRbaddata/)   
-      {print "Error $command: Invalid data.\n";$error=1;}
+      {$er="Cmd $command: Invalid data.";}
     elsif ($var=~/ERRbaddrive/)   
-      {print "Error $command: Invalid drive specified.\n";$error=1;}
+      {$er="Cmd $command: Invalid drive specified.";}
     elsif ($var=~/ERRremcd/)   
-      {print "Error $command: A Delete Directory request attempted  to  remove  the  server's  current directory.\n";$error=1;}
+      {$er="Cmd $command: A Delete Directory request attempted to remove the server's current directory.";}
     elsif ($var=~/ERRdiffdevice/)   
-      {print "Error $command: Not same device.\n";$error=1;}
+      {$er="Cmd $command: Not same device.";}
     elsif ($var=~/ERRnofiles/)   
-      {print "Error $command: A File Search command can find no more files matching the specified criteria.\n";$error=1;}
+      {$er="Cmd $command: A File Search command can find no more files matching the specified criteria.";}
     elsif ($var=~/ERRbadshare/)   
-      {print "Error $command: The sharing mode specified for an Open conflicts with existing  FIDs  on the file.\n";$error=1;}
+      {$er="Cmd $command: The sharing mode specified for an Open conflicts with existing  FIDs  on the file.";}
     elsif ($var=~/ERRlock/)   
-      {print "Error $command: A Lock request conflicted with an existing lock or specified an  invalid mode,  or an Unlock requested attempted to remove a lock held by another process.\n";$error=1;}
+      {$er="Cmd $command: A Lock request conflicted with an existing lock or specified an  invalid mode,  or an Unlock requested attempted to remove a lock held by another process.";}
     elsif ($var=~/ERRunsup/)   
-      {print "Error $command: The operation is unsupported\n";$error=1;}
+      {$er="Cmd $command: The operation is unsupported";}
     elsif ($var=~/ERRnosuchshare/)  
-      {print "Error $command: You specified an invalid share name\n";$error=1;}
+      {$er="Cmd $command: You specified an invalid share name";}
     elsif ($var=~/ERRfilexists/)   
-      {print "Error $command: The file named in a Create Directory, Make  New  File  or  Link  request already exists.\n";$error=1;}
+      {$er="Error $command: The file named in a Create Directory, Make New File or Link request already exists.";}
     elsif ($var=~/ERRbadpipe/)   
-      {print "Error $command: Pipe invalid.\n";$error=1;}
+      {$er="Cmd $command: Pipe invalid.";}
     elsif ($var=~/ERRpipebusy/)   
-      {print "Error $command: All instances of the requested pipe are busy.\n";$error=1;}
+      {$er="Cmd $command: All instances of the requested pipe are busy.";}
     elsif ($var=~/ERRpipeclosing/)  
-      {print "Error $command: Pipe close in progress.\n";$error=1;}
+      {$er="Cmd $command: Pipe close in progress.";}
     elsif ($var=~/ERRnotconnected/)  
-      {print "Error $command: No process on other end of pipe.\n";$error=1;}
+      {$er="Cmd $command: No process on other end of pipe.";}
     elsif ($var=~/ERRmoredata/)   
-      {print "Error $command: There is more data to be returned.\n";$error=1;}
+      {$er="Cmd $command: There is more data to be returned.";}
     elsif ($var=~/ERRinvgroup/)   
-      {print "Error $command: Invalid workgroup (try the -W option)\n";$error=1;}
+      {$er="Cmd $command: Invalid workgroup (try the -W option)";}
     elsif ($var=~/ERRerror/)   
-      {print "Error $command: Non-specific error code.\n";$error=1;}
+      {$er="Cmd $command: Non-specific error code.";}
     elsif ($var=~/ERRbadpw/) 
-      {print "Error $command: Bad password - name/password pair in a Tree Connect or Session Setup are invalid.\n";$error=1;}
+      {$er="Cmd $command: Bad password - name/password pair in a Tree Connect or Session Setup are invalid.";}
     elsif ($var=~/ERRbadtype/)  
-      {print "Error $command: reserved.\n";$error=1;}
+      {$er="Cmd $command: reserved.";}
     elsif ($var=~/ERRaccess/) 
-      {print "Error $command: The requester does not have  the  necessary  access  rights  within  the specified  context for the requested function. The context is defined by the TID or the UID.\n";$error=1;}
+      {$er="Cmd $command: The requester does not have  the  necessary  access  rights  within  the specified  context for the requested function. The context is defined by the TID or the UID.";}
     elsif ($var=~/ERRinvnid/)   
-      {print "Error $command: The tree ID (TID) specified in a command was invalid.\n";$error=1;}
+      {$er="Cmd $command: The tree ID (TID) specified in a command was invalid.";}
     elsif ($var=~/ERRinvnetname/) 
-      {print "Error $command: Invalid network name in tree connect.\n";$error=1;}
+      {$er="Cmd $command: Invalid network name in tree connect.";}
     elsif ($var=~/ERRinvdevice/)  
-      {print "Error $command: Invalid device - printer request made to non-printer connection or  non-printer request made to printer connection.\n";$error=1;}
+      {$er="Cmd $command: Invalid device - printer request made to non-printer connection or  non-printer request made to printer connection.";}
     elsif ($var=~/ERRqfull/)  
-      {print "Error $command: Print queue full (files) -- returned by open print file.\n";$error=1;}
+      {$er="Cmd $command: Print queue full (files) -- returned by open print file.";}
     elsif ($var=~/ERRqtoobig/)
-      {print "Error $command: Print queue full -- no space.\n";$error=1;}
+      {$er="Cmd $command: Print queue full -- no space.";}
     elsif ($var=~/ERRqeof/)  
-      {print "Error $command: EOF on print queue dump.\n";$error=1;}
+      {$er="Cmd $command: EOF on print queue dump.";}
     elsif ($var=~/ERRinvpfid/)  
-      {print "Error $command: Invalid print file FID.\n";$error=1;}
+      {$er="Cmd $command: Invalid print file FID.";}
     elsif ($var=~/ERRsmbcmd/) 
-      {print "Error $command: The server did not recognize the command received.\n";$error=1;}
+      {$er="Cmd $command: The server did not recognize the command received.";}
     elsif ($var=~/ERRsrverror/)  
-      {print "Error $command: The server encountered an internal error, e.g., system file unavailable.\n";$error=1;}
+      {$er="Cmd $command: The server encountered an internal error, e.g., system file unavailable.";}
     elsif ($var=~/ERRfilespecs/)  
-      {print "Error $command: The file handle (FID) and pathname parameters contained an invalid  combination of values.\n";$error=1;}
+      {$er="Cmd $command: The file handle (FID) and pathname parameters contained an invalid  combination of values.";}
     elsif ($var=~/ERRreserved/)  
-      {print "Error $command: reserved.\n";$error=1;}
+      {$er="Cmd $command: reserved.";}
     elsif ($var=~/ERRbadpermits/)   
-      {print "Error $command: The access permissions specified for a file or directory are not a valid combination.  The server cannot set the requested attribute.\n";$error=1;}
+      {$er="Cmd $command: The access permissions specified for a file or directory are not a valid combination.  The server cannot set the requested attribute.";}
     elsif ($var=~/ERRreserved/)   
-      {print "Error $command: reserved.\n";$error=1;}
+      {$er="Cmd $command: reserved.";}
     elsif ($var=~/ERRsetattrmode/)  
-      {print "Error $command: The attribute mode in the Set File Attribute request is invalid.\n";$error=1;}
+      {$er="Cmd $command: The attribute mode in the Set File Attribute request is invalid.";}
     elsif ($var=~/ERRpaused/)   
-      {print "Error $command: Server is paused.\n";$error=1;}
+      {$er="Cmd $command: Server is paused.";}
     elsif ($var=~/ERRmsgoff/)   
-      {print "Error $command: Not receiving messages.\n";$error=1;}
+      {$er="Cmd $command: Not receiving messages.";}
     elsif ($var=~/ERRnoroom/)   
-      {print "Error $command: No room to buffer message.\n";$error=1;}
+      {$er="Cmd $command: No room to buffer message.";}
     elsif ($var=~/ERRrmuns/)  
-      {print "Error $command: Too many remote user names.\n";$error=1;}
+      {$er="Cmd $command: Too many remote user names.";}
     elsif ($var=~/ERRtimeout/)   
-      {print "Error $command: Operation timed out.\n";$error=1;}
+      {$er="Cmd $command: Operation timed out.";}
     elsif ($var=~/ERRnoresource/)   
-      {print "Error $command: No resources currently available for request.\n";$error=1;}
+      { $er="Cmd $command: No resources currently available for request.";}
     elsif ($var=~/ERRtoomanyuids/)  
-      {print "Error $command: Too many UIDs active on this session.\n";$error=1;}
+      {$er="Cmd $command: Too many UIDs active on this session.";}
     elsif ($var=~/ERRbaduid/)   
-      {print "Error $command: The UID is not known as a valid ID on this session.\n";$error=1;}
+      {
+	$er="Cmd $command: The UID is not known as a valid ID on this session.";
+	}
     elsif ($var=~/ERRusempx/)   
-      {print "Error $command: Temp unable to support Raw, use MPX mode.\n";$error=1;}
+      {$er="Cmd $command: Temp unable to support Raw, use MPX mode.";	}
     elsif ($var=~/ERRusestd/)   
-      {print "Error $command: Temp unable to support Raw, use standard read/write.\n";$error=1;}
+      {$er="Cmd $command: Temp unable to support Raw, use standard read/write.";}
     elsif ($var=~/ERRcontmpx/)   
-      {print "Error $command: Continue in MPX mode.\n";$error=1;}
+      {$er="Cmd $command: Continue in MPX mode.";}
     elsif ($var=~/ERRreserved/)   
-      {print "Error $command: reserved.\n";$error=1;}
+      {$er="Cmd $command: reserved.";}
     elsif ($var=~/ERRreserved/)   
-      {print "Error $command: reserved.\n";$error=1;}
+      {$er="Cmd $command: reserved.";}
     elsif ($var=~/ERRnosupport/)   
-      {print "Function not supported.\n";$error=1;}
+      {print "Function not supported.";}
     elsif ($var=~/ERRnowrite/)   
-      {print "Error $command: Attempt to write on write-protected diskette.\n";$error=1;}
+      {$er="Cmd $command: Attempt to write on write-protected diskette.";}
     elsif ($var=~/ERRbadunit/)   
-      {print "Error $command: Unknown unit.\n";$error=1;}
+      {$er="Cmd $command: Unknown unit.";}
     elsif ($var=~/ERRnotready/)   
-      {print "Error $command: Drive not ready.\n";$error=1;}
+      {$er="Cmd $command: Drive not ready.";}
     elsif ($var=~/ERRbadcmd/)   
-      {print "Error $command: Unknown command.\n";$error=1;}
+      {$er="Cmd $command: Unknown command.";}
     elsif ($var=~/ERRdata/)   
-      {print "Error $command: Data error (CRC).\n";$error=1;}
+      {$er="Cmd $command: Data error (CRC).";}
     elsif ($var=~/ERRbadreq/)   
-      {print "Error $command: Bad request structure length.\n";$error=1;}
+      {$er="Cmd $command: Bad request structure length.";}
     elsif ($var=~/ERRseek/)   
-      {print "Error $command: Seek error.\n";$error=1;}
+      {$er="Cmd $command: Seek error.";}
     elsif ($var=~/ERRbadmedia/)  
-      {print "Error $command: Unknown media type.\n";$error=1;}
+      {$er="Cmd $command: Unknown media type.";}
     elsif ($var=~/ERRbadsector/)
-      {print "Error $command: Sector not found.\n";$error=1;}
+      {$er="Cmd $command: Sector not found.";}
     elsif ($var=~/ERRnopaper/) 
-      {print "Error $command: Printer out of paper.\n";$error=1;}
+      {$er="Cmd $command: Printer out of paper.";}
     elsif ($var=~/ERRwrite/) 
-      {print "Error $command: Write fault.\n";$error=1;}
+      {$er="Cmd $command: Write fault.";}
     elsif ($var=~/ERRread/) 
-      {print "Error $command: Read fault.\n";$error=1;}
+      {$er="Cmd $command: Read fault.";}
     elsif ($var=~/ERRgeneral/)
-      {print "Error $command: General failure.\n";$error=1;}
+      {$er="Cmd $command: General failure.";}
     elsif ($var=~/ERRbadshare/) 
-      {print "Error $command: An open conflicts with an existing open.\n";$error=1;}
+      {$er="Cmd $command: An open conflicts with an existing open.";}
     elsif ($var=~/ERRlock/) 
-      {print "Error $command: A Lock request conflicted with an existing lock or specified an invalid mode, or an Unlock requested attempted to remove a lock held by another process.\n";$error=1;}
+      {$er="Cmd $command: A Lock request conflicted with an existing lock or specified an invalid mode, or an Unlock requested attempted to remove a lock held by another process.";}
     elsif ($var=~/ERRwrongdisk/) 
-      {print "Error $command: The wrong disk was found in a drive.\n";$error=1;}
+      {$er="Cmd $command: The wrong disk was found in a drive.";}
     elsif ($var=~/ERRFCBUnavail/)  
-      {print "Error $command: No FCBs are available to process request.\n";$error=1;}
+      {$er="Cmd $command: No FCBs are available to process request.";}
     elsif ($var=~/ERRsharebufexc/)
-      {print "Error $command: A sharing buffer has been exceeded.\n";$error=1;}
+      {$er="Cmd $command: A sharing buffer has been exceeded.";}
+    elsif ($var=~/ERRDOS - 183 renaming files/)
+      {$er="Cmd $command: File target already exist.";}
     elsif ($var=~/ERR/)   
-      {print "Error $command: reserved.\n";$error=1;}
-  return ($error,@var);
+      {$er="Cmd $command: reserved.";}
+    $self->{LAST_REP} = \@var;
+    $self->{LAST_ERR} = $er if ($er);
+  return (defined($er) ? undef : 1);
   }
 
 #------------------------------------------------------------------------------
@@ -668,17 +723,17 @@ sub command
 
 =head1 NAME
 
-Filesys::SmbClientParser - Perl client to reach Samba ressources
+Filesys::SmbClientParser - Perl client to reach Samba ressources with smbclient
 
 =head1 SYNOPSIS
 
   use Filesys::SmbClientParser;
-  my $smb = new Filesys::SmbClientParser;
-
-  
-  # Set parameters for connect
-  $smb->User('Administrateur');
-  $smb->Password('password');
+  my $smb = new Filesys::SmbClientParser
+  (undef,
+   (
+    user     => 'Administrateur',
+    password => 'password'
+   ));
   # Or like -A parameters:
   $smb->Auth("/home/alian/.smbpasswd");
 
@@ -728,6 +783,9 @@ Filesys::SmbClientParser - Perl client to reach Samba ressources
   $smb->cd('tatz');
   $smb->tar('x','/tmp/jdk.tar');
 
+
+See test.pl file for others examples.
+
 =head1 DESCRIPTION
 
 SmbClientParser work with output of bin smbclient, so it doesn't work
@@ -738,33 +796,28 @@ but on Nov.2000 (Samba version prior to 2.0.8) there is no public
 interface and shared library defined in Samba projet.
 
 Request has been submit and accepted on Samba-technical mailing list,
-so a new module with name SmbClient will be done as soon as the public
-interface has been known.
+so I've build another module called Filesys-SmbClient that use features
+of this library. (libsmbclient.so)
 
 For Samba client prior to 2.0.8, use this module !
 
 SmbClientParser is adapted from SMB.pm make by Remco van Mook
 mook@cs.utwente.nl on smb2www project.
 
-=head1 AUTHOR
-
-Alain BARBET alian@alianwebserver.com
-
-=head1 SEE ALSO
-
-smbclient(1) man pages.
-
-=head1 DESCRIPTION
+=head1 INTERFACE
 
 =head2 Objects methods
 
 =over
 
-=item new([$path_of_smbclient])
+=item new([$path_of_smbclient], [%param])
 
 Create a new FileSys::SmbClientParser instance. Search bin smbclient,
-and fail if it can't find it in /usr/bin, /usr/local/bin or /opt/bin.
-If it's on another directory, use parameter $path_of_smbclient
+and fail if it can't find it in /usr/bin, /usr/local/bin, /opt/bin or
+/usr/local/samba/bin/.
+If it's on another directory, use parameter $path_of_smbclient.
+
+%param is a hash with key user,host,password,workgroup,ipadress,share
 
 =item Host([$hostname])
 
@@ -784,7 +837,12 @@ Set or get the password to be used
 
 =item Workgroup([$wg])
 
-Set or get the workgroup to be used
+Set or get the workgroup to be used. (See -W switch in smbclient man page)
+
+=item IpAdress([$ip])
+
+Set or get the IP adress of the server to contact (See -I switch in smbclient 
+man page)
 
 =item Debug([$debug])
 
@@ -805,7 +863,17 @@ compatible.
 
 =over
 
-=item GetShr([$host],[$user],[$pass],[$wg])
+=item GetGroups([$host],[$user],[$pass],[$wg],[$ip])
+
+If no parameters is given, field will be used.
+
+Return an array with sorted workgroup listing
+
+Syntax: @output = $smb->GetGroups
+
+array contains hashes; keys: name, master
+
+=item GetShr([$host],[$user],[$pass],[$wg],[$ip])
 
 If no parameters is given, field will be used.
 
@@ -815,7 +883,7 @@ Syntax: @output = $smb->GetShr
 
 array contains hashes; keys: name, type, comment
 
-=item GetHosts([$host],[$user],[$pass],[$wg])
+=item GetHosts([$host],[$user],[$pass],[$wg],[$ip])
 
 Return an array with sorted host listing
 
@@ -844,7 +912,7 @@ Parameters :
 
 =over
 
-=item cd [$dir] [$host ,$user, $pass, $wg]
+=item cd [$dir] [$host ,$user, $pass, $wg, $ip]
 
 
 cd [directory name]
@@ -855,7 +923,7 @@ any reason the specified directory is inaccessible. Return list.
 If no directory name is specified, the current working directory on the server
 will be reported.
 
-=item dir [$dir] [$host ,$user, $pass, $wg]
+=item dir [$dir] [$host ,$user, $pass, $wg, $ip]
 
 Return an array with sorted dir and filelisting
 
@@ -863,34 +931,34 @@ Syntax: @output = $smb->dir (host,share,dir,user,pass)
 
 Array contains hashes; keys: name, attr, size, date
 
-=item mkdir($masq, [$dir, $host ,$user, $pass, $wg])
+=item mkdir($masq, [$dir, $host ,$user, $pass, $wg, $ip])
 
 mkdir <mask>
 Create a new directory on the server (user access privileges
 permitting) with the specified name.
 
-=item rmdir($masq, [$dir, $host ,$user, $pass, $wg])
+=item rmdir($masq, [$dir, $host ,$user, $pass, $wg, $ip])
 
 Remove the specified directory (user access privileges
 permitting) from the server.
 
-=item get($file, [$target], [$dir, $host ,$user, $pass, $wg])
+=item get($file, [$target], [$dir, $host ,$user, $pass, $wg, $ip])
 
 Gets the file $file, using $user and $pass, to $target on courant SMB
 server and return the error code.
 If $target is unspecified, courant directory will be used
 For use STDOUT, set target to '-'.
 
-Syntax: $error = $smb->get ($file,$target,$dir)
- 
-=item del($mask, [$dir, $host ,$user, $pass, $wg])
+Syntax: $smb->get ($file,$target,$dir)
+
+=item del($mask, [$dir, $host ,$user, $pass, $wg, $ip])
 
 del <mask>
 The client will request that the server attempt to delete
 all files matching "mask" from the current working directory
 on the server
 
-=item rename($source, $target, [$dir, $host ,$user, $pass, $wg])
+=item rename($source, $target, [$dir, $host ,$user, $pass, $wg, $ip])
 
 rename source target
 The file matched by mask will be moved to target.  These names
@@ -909,19 +977,19 @@ or pattern * or file separated by space
 
 Syntax:
 
-  $error = $smb->mget ('file'); #or
-  $error = $smb->mget (join(' ',@file); #or
-  $error = $smb->mget (\@file); #or
-  $error = $smb->mget ("*",1);
+  $smb->mget ('file'); #or
+  $smb->mget (join(' ',@file); #or
+  $smb->mget (\@file); #or
+  $smb->mget ("*",1);
 
-=item put$($orig,[$file],[$dir, $host ,$user, $pass, $wg])
+=item put$($orig,[$file],[$dir, $host ,$user, $pass, $wg, $ip])
 
 Puts the file $orig to $file, using $user and $pass on courant SMB
 server and return the error code. If no $file specified, use same 
 name on local filesystem.
 If $orig is unspecified, STDIN is used (-).
 
-Syntax: $error = $smb->PutFile ($host,$share,$file,$user,$pass,$orig)
+Syntax: $smb->PutFile ($host,$share,$file,$user,$pass,$orig)
 
 =item mput($file,[$recurse])
 
@@ -931,10 +999,10 @@ or pattern * or file separated by space
 
 Syntax:
 
-  $error = $smb->mput ('file'); #or
-  $error = $smb->mput (join(' ',@file); #or
-  $error = $smb->mput (\@file); #or
-  $error = $smb->mput ("*",1);
+  $smb->mput ('file'); #or
+  $smb->mput (join(' ',@file); #or
+  $smb->mput (\@file); #or
+  $smb->mput ("*",1);
 
 =back
 
@@ -942,14 +1010,30 @@ Syntax:
 
 =over
 
-=item tar($command, $target, [$dir, $host ,$user, $pass, $wg])
+=item tar($command, $target, [$dir, $host ,$user, $pass, $wg, $ip])
 
 Execute TAR commande on //$host/$share/$dir, using $user and $pass
 and return the error code. $target is name of tar file that will be used
 
-Syntax: $error = $smb->tar ($command,'/tmp/myar.tar') where command 
+Syntax: $smb->tar ($command,'/tmp/myar.tar') where command 
 in ('x','c',...) 
 See smbclient man page
+
+=back
+
+=head2 Error methods
+
+All methods return undef on error and set err in $smb->err.
+
+=over
+
+=item err
+
+Return last text error that smbclient found
+
+=item LastResponse
+
+Return last buffer return by smbclient
 
 =back
 
@@ -966,3 +1050,13 @@ sort an array of hashes by $_->{name} (for GetSMBDir et al)
 =item command($args,$command)
 
 =back
+
+=head1 AUTHOR
+
+Alain BARBET alian@alianwebserver.com
+
+=head1 SEE ALSO
+
+smbclient(1) man pages.
+
+=cut

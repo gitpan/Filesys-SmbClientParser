@@ -1,5 +1,18 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
+2.0  2002/01/25 11:46:41  alian
+ - Add IP parameter
+ - Add some quote for space in name usage
+ (tks to Mike Rosack for his BuzzSearch version)
+ - Update POD documentation
+ - Update all return code error: undef is always return if error,
+ and method err return last string error find.
+ This is why I pass to 2.0 release.
+ - Correct no error code in mkdir, delete
+ - Debug GetGroups method
+ - Debug case if share is defined in GetShare or GetHosts
+ - Add hash parameter to constructor
+
 1.4  2001/05/30 07:58:42  alian
  - Add workgroup parameter (tkx to <ClarkJP@nswccd.navy.mil> for suggestion)
  - Correct a bug with directory (double /) tks to  <erranp@go2net.com>
