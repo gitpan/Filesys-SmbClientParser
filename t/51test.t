@@ -1,4 +1,4 @@
-#!/usr/bin/env perl -Tw
+#!/usr/bin/env perl -w
 
 $ENV{PATH}='';
 $ENV{ENV}='';
@@ -6,7 +6,14 @@ use Test::More;
 use Filesys::SmbClientParser;
 use POSIX;
 use strict;
-
+my @zz;
+END {
+  chdir "tmpsmb";
+  unlink @zz;
+  chdir "..";
+  rmdir("tmpsmb") or print "Can't unlink tmpsmb:$!\n";
+  unlink("credits");
+}
 my @lc =
   (
    # repertoire fichier
@@ -19,7 +26,7 @@ my @lc =
 if (! -e ".m") {
   plan skip_all => 'no smbclient tests defined with perl Makefile.PL';
 } else {
- plan tests => 16 * ($#lc+1);
+ plan tests => (16 * ($#lc+1)) + 3;
 }
 
 open(F,".m") || die "Can't read .m\n";
@@ -29,6 +36,7 @@ my $sha = $l[1];
 
 foreach my $ref (@lc) {
   my ($file, $dir) = @{$ref};
+  push @zz, $file;
   # create a test file
   open(FILE,">$file") || die "can't create $file:$!\n";
   print FILE "some data";
@@ -99,14 +107,54 @@ foreach my $ref (@lc) {
 
   unlink($file.'_2');
   unlink($file) if (-e $file);
-
-  print "WORKGROUP:\n\tWg\tMaster\n";
-  foreach ($smb->GetGroups) {print "\t",$_->{name},"\t",$_->{master},"\n";}
-  print "HOSTS:\n\tName\t\tComment\n";
-  foreach ($smb->GetHosts)  {print "\t",$_->{name},"\t\t",$_->{comment},"\n";}
-  print "ON ",$smb->Host," i've found SHARE:\n\tName\n";
-  foreach ($smb->GetShr)    {print "\t",$_->{name},"\n";}
 }
+
+my $smb = new Filesys::SmbClientParser
+  (
+   undef,
+     (
+      workgroup  => $l[2],
+      host       => $l[0],
+      share      => $l[1],
+     )
+    );
+open(F,">credits");
+print F "username=$l[3]
+password=$l[4]
+";
+close(F);
+$smb->Auth("credits");
+mkdir "tmpsmb",0755 or die "Can't create tmpsmb:$!\n";
+chdir "tmpsmb";
+# create some files
+foreach my $ref (@lc) {
+  my ($file, $dir) = @{$ref};
+  # create a test file
+  open(FILE,">$file") || die "can't create $file:$!\n";
+  print FILE "some data";
+  close(FILE);
+}
+chdir "..";
+
+# mput
+ok( $smb->mput("tmpsmb", 1) ,"mput") or diag($smb->{LAST_ERR});
+#ok(! $smb->mput("tmpsmb2", 1) );
+
+# mget
+chdir "tmpsmb";
+unlink @zz;
+chdir "..";
+rmdir("tmpsmb") or print "Can't unlink tmpsmb:$!\n";
+ok( $smb->mget("tmpsmb", 1), "mget") or diag($smb->{LAST_ERR});
+ok(! $smb->mget("tmpsmb2", 1), "mget non existant") or diag($smb->{LAST_ERR});
+
+print "WORKGROUP:\n\tWg\tMaster\n";
+foreach ($smb->GetGroups) {print "\t",$_->{name},"\t",$_->{master},"\n";}
+print "HOSTS:\n\tName\t\tComment\n";
+  foreach ($smb->GetHosts)  {print "\t",$_->{name},"\t\t",$_->{comment},"\n";}
+print "ON ",$smb->Host," i've found SHARE:\n\tName\n";
+foreach ($smb->GetShr)    {print "\t",$_->{name},"\n";}
+
 
 print "There is a .m file in this directory with info about your params \n",
   "for you SMB server test. Think to remove it if you have finish \n",

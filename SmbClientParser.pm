@@ -5,6 +5,16 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.6  2004/01/28 22:58:42  alian
+# - Fix Auth that only allow \w in password
+# - Fix mget & mput bug with ';' (reported by Nathan Vonnahme).
+# - Fix bug if password contain & => quote password (reported by Gael LEPETIT).
+# - Fix du and incorrect order at return time in array context (reported by
+# rachinsky at vdesign.ru).
+# - Fix dir method that didn't allow space in directory name => quote dir. 
+# (fixed by torstei at linpro.no).
+# - Add test for Auth, mget, mput.
+#
 # Revision 2.5  2002/11/12 18:53:44  alian
 # Update POD documentation
 #
@@ -20,27 +30,6 @@ package Filesys::SmbClientParser;
 # - Update command method for perl -T mode
 # - Update all exec command: add >&1 for Solaris output on STDERR
 # - Add NT_STATUS_ message detection for error
-#
-# Revision 2.2  2002/08/08 23:28:22  alian
-# - Correction bug sur option -N de smbclient (tks to reiffer@kph.uni-mainz.de)
-#
-# Revision 2.1  2002/04/11 23:39:34  alian
-# - Add du method  (thanks to Ben Scott <scotsman@CSUA.Berkeley.EDU>)
-# - Correct pwd method
-#
-# Revision 2.0  2002/01/25 11:46:41  alian
-# - Add IP parameter
-# - Add some quote for space in name usage
-# (tks to Mike Rosack for his BuzzSearch version)
-# - Update POD documentation
-# - Update all return code error: undef is always return if error,
-# and method err return last string error find.
-# This is why I pass to 2.0 release.
-# - Correct no error code in mkdir, delete
-# - Debug GetGroups method
-# - Debug case if share is defined in GetShare or GetHosts
-# - Add hash parameter to constructor
-
 
 use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
@@ -49,7 +38,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.5 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.6 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -107,10 +96,10 @@ sub Share {if ($_[1]) {$_[0]->{SHARE}=$_[1];} return $_[0]->{SHARE};}
 sub Password {if ($_[1]) {$_[0]->{PASSWORD}=$_[1];} return $_[0]->{PASSWORD};}
 sub Workgroup {if ($_[1]) {$_[0]->{WG}=$_[1];} return $_[0]->{WG};}
 sub IpAdress {if ($_[1]) {$_[0]->{IP}=$_[1];} return $_[0]->{IP};}
-sub LastResponse 
-  {if ($_[1]) {$_[0]->{LAST_REP}=$_[1];} return $_[0]->{LAST_REP};}
-sub err 
-  {if ($_[1]) {$_[0]->{LAST_ERR}=$_[1];} return $_[0]->{LAST_ERR};}
+sub LastResponse {
+  if ($_[1]) {$_[0]->{LAST_REP}=$_[1];} return $_[0]->{LAST_REP};}
+sub err {
+  if ($_[1]) {$_[0]->{LAST_ERR}=$_[1];} return $_[0]->{LAST_ERR};}
 
 #------------------------------------------------------------------------------
 # Debug mode
@@ -125,26 +114,24 @@ sub Debug
 #------------------------------------------------------------------------------
 # Auth
 #------------------------------------------------------------------------------
-sub Auth
-  {
-    my ($self,$auth)=@_;
-    print "In auth with $auth\n" if ($self->{DEBUG});
-    if ($auth)
-      {
-	if (-r $auth) {
-	  open(AUTH, $auth) || die "Can't read $auth:$!\n";
-	  while (<AUTH>) {
-	    if ($_ =~ /^(\w+)\s*=\s*(\w+)\s*$/) {
-	      my $key = $1;
-	      my $value = $2;
-	      if ($key =~ /^password$/i) {$_[0]->Password($value);}
-	      elsif ($key =~ /^username$/i) {$_[0]->User($value);}
-	    }
-	  }
-	  close(AUTH);
-	}
+sub Auth {
+  my ($self,$auth)=@_;
+  print "In auth with $auth\n" if ($self->{DEBUG});
+  if ($auth && -r $auth) {
+    open(AUTH, $auth) || die "Can't read $auth:$!\n";
+    while (<AUTH>) {
+      chomp;
+      if ($_ =~ /^(\w+)\s*=\s*(.+)\s*$/) {
+	my ($key,$value) = ($1,$2);
+	if ($key =~ /^password$/i) {$_[0]->Password($value);}
+	elsif ($key =~ /^username$/i) {$_[0]->User($value);}
       }
+    }
+    close(AUTH);
+    return 1;
   }
+  return 0;
+}
 
 
 #------------------------------------------------------------------------------
@@ -156,7 +143,7 @@ sub _List
     if (!$host) {$host=$self->Host;} undef $self->{HOST};
     my $tmp = $self->Share; undef $self->{SHARE};
     my $commande = "-L '\\\\$host' ";
-    $self->commande($commande, undef, undef, undef, $user, $pass, $wg, $ip)
+    $self->SmbOption($commande, undef, undef, undef, $user, $pass, $wg, $ip)
 	|| return undef;
     $self->Host($host); $self->Share($tmp);
     return $self->LastResponse;
@@ -279,7 +266,7 @@ sub cd
 	my $commande;
 	if ($dir ne ".."){$commande = "cd \"$dir\""; }
 	else { $commande = "cd .."; }
-	$self->operation($commande, undef, @_) || return undef;
+	$self->SmbScript($commande, undef, @_) || return undef;
 	if ($dir=~/^\//) {$self->{DIR}=$dir;}
 	elsif ($dir=~/^..$/) 
 	  {if ($self->{DIR}=~/(.*\/)(.+?)$/) {$self->{DIR}=$1;}}
@@ -293,42 +280,35 @@ sub cd
 #------------------------------------------------------------------------------
 # dir
 #------------------------------------------------------------------------------
-sub dir
-  {
-    my $self = shift;
-    my $dir  = shift;
-    my (@dir,@files);
-    if (!$dir) {$dir=$self->{DIR};}
-    my $cmd = "ls $dir/*";
-    $self->operation($cmd,undef,@_) || return undef;
-    my $out = $self->LastResponse;
-    foreach my $line ( @$out )
-      {
-        if ($line =~ /^  ([\S ]*\S|[\.]+) {5,}([HDRSA]+) +([0-9]+)  (\S[\S ]+\S)$/g)
-          {
-            my $rec = {};
-            $rec->{name} = $1;
-            $rec->{attr} = $2;
-            $rec->{size} = $3;
-            $rec->{date} = $4;
-            if ($rec->{attr} =~ /D/) {push @dir, $rec;}
-            else {push @files, $rec;}
-          }
-        elsif ($line =~ /^  ([\S ]*\S|[\.]+) {6,}([0-9]+)  (\S[\S ]+\S)$/)
-          {
-            my $rec = {};
-            $rec->{name} = $1;
-            $rec->{attr} = "";
-            $rec->{size} = $2;
-            $rec->{date} = $3;
-            push @files, $rec; # No attributes at all, so it must be a file
-          }
-      }
-    my @ret = sort byname @dir;
-    @files = sort byname @files;
-    @ret= (@ret, @files );
-    return @ret;
+sub dir  {
+  my $self = shift;
+  my $dir  = shift;
+  my (@dir,@files);
+  $dir = $self->{DIR} unless $dir;
+  my $cmd = "ls \"$dir/*\"";
+  $self->SmbScript($cmd,undef,@_) || return undef;
+  my $out = $self->LastResponse;
+  foreach my $line ( @$out ) {
+    if ($line=~/^  ([\S ]*\S|[\.]+) {5,}([HDRSA]+) +([0-9]+)  (\S[\S ]+\S)$/g){
+      my $rec = {};
+      $rec->{name} = $1;
+      $rec->{attr} = $2;
+      $rec->{size} = $3;
+      $rec->{date} = $4;
+      if ($rec->{attr} =~ /D/) {push @dir, $rec;}
+      else {push @files, $rec;}
+    }
+    elsif ($line =~ /^  ([\S ]*\S|[\.]+) {6,}([0-9]+)  (\S[\S ]+\S)$/) {
+      my $rec = {};
+      $rec->{name} = $1;
+      $rec->{attr} = "";
+      $rec->{size} = $2;
+      $rec->{date} = $3;
+      push @files, $rec; # No attributes at all, so it must be a file
+    }
   }
+  return (sort byname @dir, sort byname @files);
+}
 
 #------------------------------------------------------------------------------
 # mkdir
@@ -338,7 +318,7 @@ sub mkdir
     my $self = shift;
     my $masq = shift;
     my $commande = "mkdir $masq";
-    return $self->operation($commande,@_);
+    return $self->SmbScript($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -351,7 +331,7 @@ sub get  {
   $file =~ s/^(.*)\/([^\/]*)$/$1$2/ ;
   my $commande = "get \"$file\" ";
   $commande.=$target if ($target);
-  return $self->operation($commande,@_);
+  return $self->SmbScript($commande,@_);
 }
 
 #------------------------------------------------------------------------------
@@ -363,9 +343,9 @@ sub mget
     my $file = shift;
     my $recurse = shift;
     $file = ref($file) eq 'ARRAY' ? join (' ',@$file) : $file;
-    $recurse ? $recurse = 'recurse;' : $recurse = " " ;
+    $recurse = $recurse ? 'recurse;' : " " ;
     my $commande = "prompt off; $recurse mget $file";
-    return $self->operation($commande,@_);
+    return $self->SmbScript($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -378,7 +358,7 @@ sub put
     my $file = shift || $orig;
     $file =~ s/^(.*)\/([^\/]*)$/$1$2/ ;
     my $commande = "put \"$orig\" \"$file\"";
-    return $self->operation($commande,@_);
+    return $self->SmbScript($commande,@_);
   }
 
 
@@ -391,9 +371,9 @@ sub mput
   my $file = shift;
   my $recurse = shift;
   $file = ref($file) eq 'ARRAY' ? join (' ',@$file) : $file;
-  $recurse ? $recurse = 'recurse;' : $recurse = " " ;
+  $recurse = $recurse ? 'recurse;' : " " ;
   my $commande = "prompt off; $recurse mput $file";
-  return $self->operation($commande,@_);
+  return $self->SmbScript($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -404,7 +384,7 @@ sub del
     my $self = shift;
     my $masq = shift;
     my $commande = "del $masq";
-    return $self->operation($commande,@_);
+    return $self->SmbScript($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -415,7 +395,7 @@ sub rmdir
     my $self = shift;
     my $masq = shift;
     my $commande = "rmdir $masq";
-    return $self->operation($commande,@_);
+    return $self->SmbScript($commande,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -427,7 +407,7 @@ sub rename
     my $source = shift;
     my $target = shift;
     my $command = "rename $source $target";
-    return $self->operation($command,@_);
+    return $self->SmbScript($command,@_);
   }
 
 #------------------------------------------------------------------------------
@@ -437,7 +417,7 @@ sub pwd
   {
     my $self = shift;
     my $command = "pwd";
-    if ($self->operation($command,@_))
+    if ($self->SmbScript($command,@_))
 	{
 	  my $out = $self->LastResponse;
 	  foreach ( @$out )
@@ -452,54 +432,49 @@ sub pwd
 #------------------------------------------------------------------------------
 # du
 #------------------------------------------------------------------------------
-sub du
-  {
-    my $self = shift;
-    my $dir  = shift;
-    my $blk = shift || 'k';
-
-    my $blksize;
-    if ($blk !~ /\D/ && $blk > 0)
-      {
-        $blksize = $blk;
-      }
-    elsif ($blk =~ /^([kbsmg])/i)
-      {
-        $blksize = 512                  if ($blk =~ /b/i); ## Posix blocks
-        $blksize = 1024                 if ($blk =~ /k/i); ## 1Kbyte blocks
-        $blksize = 1024*512             if ($blk =~ /s/i); ## Samba blocks
-        $blksize = 1024*1024            if ($blk =~ /m/i); ## 1Mbyte blocks
-        $blksize = 1024*1024*1024       if ($blk =~ /g/i); ## 1Gbyte blocks
-      }
-    else
-      {die "Invalid argument for blocksize: $blk\n";}
-    $blksize ||= 1024;          ## Default to 1Kbyte blocks
-
-    $dir =~ s#(.*)(^|/)\.(/|$)(.*)#$1$2$4#g if ($dir);
-    $dir = $self->{DIR} unless ($dir);
-
-    my $cmd = "du $dir/*";
-    $self->operation($cmd,undef,@_) || return undef;
-    my $out = $self->LastResponse;
-    my $rec = {};
-    foreach my $line ( @$out )
-      {
-        if ($line =~ /^\s*(\d+)\D+(\d+)\D+(\d+)\D+$/)
-          {
-            my $blksz = (defined $2) ? $2 : 512 * 1024;
-            $rec->{ublks} = $1 * ($blksz / $blksize);
-            $rec->{fblks} = $3 * ($blksz / $blksize);
-            $rec->{blksz} = $blksize;
-          }
-        if ($line =~ /^\D+:\s+(\d+)\s*$/)
-          {
-            $rec->{usage} = $1 / $blksize;
-          }
-      }
-
-    if (wantarray()) { return values %$rec; }
-    else { return $rec->{usage}; }
+sub du  {
+  my $self = shift;
+  my $dir  = shift;
+  my $blk = shift || 'k';
+  my $blksize;
+  if ($blk !~ /\D/ && $blk > 0) {
+    $blksize = $blk;
   }
+  elsif ($blk =~ /^([kbsmg])/i) {
+    $blksize = 512                  if ($blk =~ /b/i); ## Posix blocks
+    $blksize = 1024                 if ($blk =~ /k/i); ## 1Kbyte blocks
+    $blksize = 1024*512             if ($blk =~ /s/i); ## Samba blocks
+    $blksize = 1024*1024            if ($blk =~ /m/i); ## 1Mbyte blocks
+    $blksize = 1024*1024*1024       if ($blk =~ /g/i); ## 1Gbyte blocks
+  } else {
+    die "Invalid argument for blocksize: $blk\n";
+  }
+  $blksize ||= 1024;          ## Default to 1Kbyte blocks
+
+  $dir =~ s#(.*)(^|/)\.(/|$)(.*)#$1$2$4#g if ($dir);
+  $dir = $self->{DIR} unless ($dir);
+
+  my $cmd = "du $dir/*";
+  $self->SmbScript($cmd,undef,@_) || return undef;
+  my $out = $self->LastResponse;
+  my $rec = {};
+  foreach my $line ( @$out ) {
+    if ($line =~ /^\s*(\d+)\D+(\d+)\D+(\d+)\D+$/) {
+      my $blksz = (defined $2) ? $2 : 512 * 1024;
+      $rec->{ublks} = $1 * ($blksz / $blksize);
+      $rec->{fblks} = $3 * ($blksz / $blksize);
+      $rec->{blksz} = $blksize;
+    }
+    if ($line =~ /^\D+:\s+(\d+)\s*$/) {
+      $rec->{usage} = $1 / $blksize;
+    }
+  }
+
+  return (wantarray() ? ($rec->{usage},
+			 $rec->{fblks},
+			 $rec->{blksz},
+			 $rec->{ublks}) : $rec->{usage} );
+}
 
 #------------------------------------------------------------------------------
 # tar
@@ -513,80 +488,57 @@ sub tar
     $self->{DIR}=undef;
     my $cmd = " -T$command $target $dir";
     $self->{DIR}=$dir;
-    return $self->commande($cmd,undef,@_);
+    return $self->SmbOption($cmd,undef,@_);
   }
 
 #------------------------------------------------------------------------------
-# operation
+# rearrange_param
 #------------------------------------------------------------------------------
-sub operation
-  {
-    my ($self,$command,$dir, $host, $share, $user, $pass, $wg, $ip) = @_;
-    if (!$user) {$user=$self->User;}
-    if (!$host) {$host=$self->Host;}    
-    if (!$share){$share=$self->Share;}
-    if (!$pass) {$pass=$self->Password;}
-    if (!$dir) {$dir=$self->{DIR};}
-    if (!$wg) {$wg = $self->Workgroup;}
-    if (!$ip) {$ip=$self->IpAdress; }
-    my $debug=' ';
-    $debug = " -d ".$self->{DEBUG}.' ' if ($self->{DEBUG});
-    # Workgroup
-    ($wg ? ($wg = "-W ".$wg." ") : ($wg = ' '));
-    # Ip adress of server
-    ($ip ? ($ip = "-I ".$ip." ") : ($ip = ' '));
-    # Path
-    ($dir ? ($dir=' -D "'.$dir.'"') : ($dir= ' '));
-    # User / Password
-    if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass.' '; }
-    # Don't prompt for password
-    elsif ($user && !$pass) {$user = '-U '.$user.' -N ';}
-    # Server/share
-    my $path=' ';
-    if ($host) {$host='//'.$host; $path.=$host; }
-    if ($share) {$share='/'.$share;$path.=$share; }
-    $path.=' ';
-    # Final command
-    my $args = $self->{SMBLIENT}.$path.$user.$wg.$ip.
-	" -d0 -c '$command' ".$dir;
-    return $self->command($args,$command);
-  }
+sub rearrange_param {
+  my ($self,$command,$dir, $host, $share, $user, $pass, $wg, $ip) = @_;
+  if (!$user) {$user=$self->User;}
+  if (!$host) {$host=$self->Host;}
+  if (!$share){$share=$self->Share;}
+  if (!$pass) {$pass=$self->Password;}
+  if (!$wg) {$wg=$self->Workgroup; }
+  if (!$ip) {$ip =$self->IpAdress; }
+  if (!$dir) {$dir=$self->{DIR}; }
+  my $debug = ($self->{DEBUG} ? " -d".$self->{DEBUG} : ' -d0 ');
+  $wg = ($wg ? ("-W ".$wg." ") : ' ');      # Workgroup
+  $ip = ($ip ? ("-I ".$ip." ") : ' ');      # Ip adress of server
+  $dir = ($dir ? (' -D "'.$dir.'"') : ' '); # Path
+  # User / Password
+  if (($user)&&($pass)) { $user = '-U "'.$user.'%'.$pass.'" '; }
+  # Don't prompt for password
+  elsif ($user && !$pass) {$user = '-U '.$user.' -N ';}
+  # Server/share
+  my $path=' ';
+  if ($host) {$host='//'.$host; $path.=$host; }
+  if ($share) {$share='/'.$share;$path.=$share; }
+  $path.=' ';
+  my $prefix = $self->{SMBLIENT}.$path.$user.$wg.$ip.$debug;
+  return ($self, $command, $prefix, $dir);
+}
 
 #------------------------------------------------------------------------------
-# commande
+# SmbScript
 #------------------------------------------------------------------------------
-sub commande
-  {
-    my ($self,$command,$dir, $host, $share, $user, $pass, $wg, $ip) = @_;
-    if (!$user) {$user=$self->User;}
-    if (!$host) {$host=$self->Host;}    
-    if (!$share){$share=$self->Share;}
-    if (!$pass) {$pass=$self->Password;}
-    if (!$dir) {$dir=$self->{DIR};}
-    if (!$wg) {$wg=$self->Workgroup;}
-    if (!$ip) {$ip=$self->IpAdress; }
-    my $debug=' ';
-    $debug = " -d ".$self->{DEBUG}.' ' if ($self->{DEBUG});
-    # Ip adress of server
-    ($ip ? ($ip = "-I ".$ip." ") : ($ip = ' '));
-    # Workgroup
-    ($wg ? ($wg = "-W ".$wg." ") : ($wg = ' '));
-    # Path
-    (($dir) ? ($dir=' -D "'.$dir.'"') : ($dir= ' '));
-    # User / Password
-    if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass.' '; }
-    # Don't prompt for password
-    elsif ($user && !$pass) {$user = '-U '.$user.' -N ';}
-    # Server/Share
-    my $path=' ';
-    if ($host) {$host='//'.$host; $path.=$host; }
-    if ($share) {$share='/'.$share;$path.=$share; }
-    $path.=' ';
-    # Final command
-    my $args = $self->{SMBLIENT}.$path.$user.$wg.$ip.
-	" -d0 ".$command.$dir;
-    return $self->command($args,$command);
-  }
+sub SmbScript {
+  my ($self,$command,$prefix,$dir) = rearrange_param(@_);
+  # Final command
+  my $args = $prefix." -c '$command' ".$dir;
+  return $self->command($args,$command,1);
+}
+
+#------------------------------------------------------------------------------
+# SmbOption
+#------------------------------------------------------------------------------
+sub SmbOption {
+  my ($self,$command,$prefix,$dir) = rearrange_param(@_);
+  # Final command
+  my $args = $prefix.$command.$dir;
+  return $self->command($args,$command);
+}
 
 #------------------------------------------------------------------------------
 # byname
@@ -596,48 +548,59 @@ sub byname {(lc $a->{name}) cmp (lc $b->{name})}
 #------------------------------------------------------------------------------
 # command
 #------------------------------------------------------------------------------
-sub command
-  {
-    my ($self,$args,$command)=@_;
-    $command.=" >&1";
-    if ($self->{"DEBUG"} > 0)
-      { print " ==> SmbClientParser::command $args\n"; }
-    my $er;
-    my $pargs;
-    $pargs = $1 if ($args=~/([^;]*)/);
-    my @var = `$pargs`;# or die "system $args failed: $?,$!\n";
-    my $var=join(' ',@var ) ;
-    # Quick return if no answer
-    return 1 if (!$var);
-    if ($var=~/ERRnoaccess/)   
-      {$er="Cmd $command: permission denied";}
-    elsif ($var=~/ERRbadfunc/)   
-      {$er="Cmd $command: Invalid function.";}
-    elsif ($var=~/ERRbadfile/)   
-      {$er="Cmd $command: File not found.";}
-    elsif ($var=~/ERRbadpath/)   
-      {$er="Cmd $command: Directory invalid.";}
-    elsif ($var=~/ERRnofids/)   
-      {$er="Cmd $command: No file descriptors available";}
-    elsif ($var=~/ERRnoaccess/)   
-      {$er="Cmd $command: Access denied.";}
-    elsif ($var=~/ERRbadfid/)   
-      {$er="Cmd $command: Invalid file handle.";}
-    elsif ($var=~/ERRbadmcb/)   
-      {$er="Cmd $command: Memory control blocks destroyed.";}
-    elsif ($var=~/ERRnomem/)   
-      {$er="Cmd $command: Insufficient server memory to perform the requested function.";}
-    elsif ($var=~/ERRbadmem/)   
-      {$er="Cmd $command: Invalid memory block address.";}
-    elsif ($var=~/ERRbadenv/)   
-      {$er="Cmd $command: Invalid environment.";}
-    elsif ($var=~/ERRbadformat/)   
-      {$er="Cmd $command: Invalid format.";}
-    elsif ($var=~/ERRbadaccess/)   
-      {$er="Cmd $command: Invalid open mode.";}
-    elsif ($var=~/ERRbaddata/)   
-      {$er="Cmd $command: Invalid data.";}
-    elsif ($var=~/ERRbaddrive/)   
+sub command {
+  my ($self,$args,$command, $smbscript)=@_;
+  $command.=" >&1";
+  print " ==> SmbClientParser::command $args\n"
+    if ($self->{"DEBUG"} > 0);
+  my $er;
+
+  # for -T
+  my $pargs;
+  if ($args=~/^([^;]*)$/) { # no ';' nickel
+    $pargs=$1;
+  } elsif ($smbscript) { # ';' is allowed inside -c ' '
+    if ($args=~/^([^;]* -c '[^']*'[^;]*)$/) {
+      $pargs=$1;
+    } else { # what that ?
+      die("Why a ';' here ? => $args");
+    }
+  } else { die("Why a ';' here ? => $args"); }
+
+  my @var = `$pargs`;
+  my $var=join(' ',@var ) ;
+
+  # Quick return if no answer
+  return 1 if (!$var);
+  if ($var=~/ERRnoaccess/) {
+    $er="Cmd $command: permission denied";
+  } elsif ($var=~/ERRbadfunc/) {
+    $er="Cmd $command: Invalid function.";
+  } elsif ($var=~/ERRbadfile/) {
+    $er="Cmd $command: File not found.";
+  } elsif ($var=~/ERRbadpath/) {
+    $er="Cmd $command: Directory invalid.";
+  }  elsif ($var=~/ERRnofids/) {
+    $er="Cmd $command: No file descriptors available";
+  } elsif ($var=~/ERRnoaccess/) {
+    $er="Cmd $command: Access denied.";
+  } elsif ($var=~/ERRbadfid/) {
+    $er="Cmd $command: Invalid file handle.";
+  } elsif ($var=~/ERRbadmcb/) {
+    $er="Cmd $command: Memory control blocks destroyed.";
+  } elsif ($var=~/ERRnomem/) {
+    $er="Cmd $command: Insufficient server memory to perform the requested function.";
+  } elsif ($var=~/ERRbadmem/) {
+    $er="Cmd $command: Invalid memory block address.";
+  } elsif ($var=~/ERRbadenv/) {
+    $er="Cmd $command: Invalid environment.";
+  } elsif ($var=~/ERRbadformat/) {
+    $er="Cmd $command: Invalid format.";
+  } elsif ($var=~/ERRbadaccess/) {
+    $er="Cmd $command: Invalid open mode.";
+  } elsif ($var=~/ERRbaddata/) {
+    $er="Cmd $command: Invalid data.";
+  } elsif ($var=~/ERRbaddrive/)
       {$er="Cmd $command: Invalid drive specified.";}
     elsif ($var=~/ERRremcd/)   
       {$er="Cmd $command: A Delete Directory request attempted to remove the server's current directory.";}
@@ -798,34 +761,27 @@ Filesys::SmbClientParser - Perl client to reach Samba ressources with smbclient
    ));
   # Or like -A parameters:
   $smb->Auth("/home/alian/.smbpasswd");
-
   
   # Set host
   $smb->Host('jupiter');
-
   
   # List host available on this network machine
   my @l = $smb->GetHosts;
   foreach (@l) {print $_->{name},"\t",$_->{comment},"\n";}
-
   
   # List share disk available
   my @l = $smb->GetShr;
   foreach (@l) {print $_->{name},"\n";}
-
   
   # Choose a shared disk
   $smb->Share('games2');
-
   
   # List content
   my @l = $smb->dir;
   foreach (@l) {print $_->{name},"\n";}
-
   
   # Send a Winpopup message
   $smb->sendWinpopupMessage('jupiter',"Hello world !");
-
   
   # File manipulation
   $smb->cd('jdk1.1.8');
@@ -836,7 +792,6 @@ Filesys::SmbClientParser - Perl client to reach Samba ressources with smbclient
   $smb->del("COPYRIGHT");
   $smb->cd('..');
   $smb->rmdir('tata');
-
   
   # Archive method
   $smb->tar('c','/tmp/jdk.tar');
@@ -918,7 +873,7 @@ Set or get the debug verbosity
 
 Use the file AUTH_FILE for username and password.
 This uses User and Password instead of -A to be backwards
-compatible.
+compatible. Return 1 if AUTH_FILE can be read, 0 else.
 
 =back
 
@@ -1125,15 +1080,13 @@ Return last buffer return by smbclient
 
 sort an array of hashes by $_->{name} (for GetSMBDir et al)
 
-=item operation(...)
-
 =item command($args,$command)
 
 =back
 
 =head1 VERSION
 
-$Revision: 2.5 $
+$Revision: 2.6 $
 
 =head1 TODO
 

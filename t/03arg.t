@@ -1,4 +1,4 @@
-#!/usr/bin/env perl -Tw
+#!/usr/bin/env perl -w
 # Test args methods: Host User Share Password Workgroup IpAdress
 
 use strict;

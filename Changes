@@ -1,5 +1,15 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
+2.6  2004/01/28 22:58:42  alian
+- Fix Auth that only allow \w in password
+- Fix mget & mput bug with ';' (reported by Nathan Vonnahme).
+- Fix bug if password contain & => quote password (reported by Gael LEPETIT).
+- Fix du and incorrect order at return time in array context (reported by 
+rachinsky at vdesign.ru).
+- Fix dir method that didn't allow space in directory name => quote dir. (fixed
+by torstei at linpro.no).
+- Add test for Auth, mget, mput.
+
 2.5  2002/11/12 18:53:44  alian
  - Update POD documentation
  - Correct t/02?.pl
