@@ -5,6 +5,16 @@ package Filesys::SmbClientParser;
 # Copyright 2000 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 1.2  2001/04/15 15:20:50  alian
+# - Correct mput subroutine wrongly defined as mget
+# - Added DEBUG level
+# - Add pod doc for User, Password, Share, Host
+# - Added rename and pwd method
+# - Changed $recurse in mget so that it is always defined after testing
+# - Added Auth() method, an alternative to explicit give of user/passwd
+# (like -A option in smbclient)
+# Thanks to brian.graham@centrelink.gov.au for this features
+#
 # Revision 0.3  2000/01/12 01:20:32  alian
 # - Add methods mget and mput
 #
@@ -12,7 +22,6 @@ package Filesys::SmbClientParser;
 # - Correct path of smbclient in new
 # - Correct arg when no password
 # - Correct error in synopsis
-#
 
 use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
@@ -21,7 +30,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 0.3 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 1.2 $ ' =~ /(\d+\.\d+)/)[0];
 
 =head1 NAME
 
@@ -35,6 +44,10 @@ Filesys::SmbClientParser - Perl client to reach Samba ressources
   # Set parameters for connect
   $smb->User('Administrateur');
   $smb->Password('password');
+  # Or like -A parameters:
+  $smb->$auth("/home/alian/.smbpasswd");
+
+  # Set host
   $smb->Host('jupiter');
 
   # List host available on this network machine
@@ -125,15 +138,87 @@ sub new {
           else {goto 'ERROR';}
         }
         $self->{DIR}='/';
+        $self->{"DEBUG"} = 0;
         return $self;
         ERROR :
           die "Can't found smbclient.\nUse new('/path/of/smbclient')";
       }
 
+=item Host($hostname)
+
+Set the remote host to be used to $hostname.
+
+=cut
+
 sub Host {if ($_[1]) {$_[0]->{HOST}=$_[1];} return $_[0]->{HOST};}
-sub User {if ($_[1]) {$_[0]->{USER}=$_[1];} return $_[0]->{USER};}
+
+=item User($username)
+
+Set the username to be used to $username.
+
+=cut
+
+sub User { if ($_[1]) { $_[0]->{USER}=$_[1];} return $_[0]->{USER};}
+
+=item Share($sharename)
+
+Set the share to be used on the remote host to $sharename.
+
+=cut
+
 sub Share {if ($_[1]) {$_[0]->{SHARE}=$_[1];} return $_[0]->{SHARE};}
+
+=item Password($password)
+
+Set the password to be used to log on to the remote share $password.
+
+=cut
+
 sub Password {if ($_[1]) {$_[0]->{PASSWORD}=$_[1];} return $_[0]->{PASSWORD};}
+
+=item Debug($debug)
+
+Set the debug verbosity
+
+    0 = no output
+    1+ = more output
+
+=cut
+
+sub Debug {my ($self,$deb)=@_;  $self->{"DEBUG"} = $1 if ($deb =~ /^(\d+)$/);  return $self->{"DEBUG"};}
+
+
+=item Auth($auth_file)
+
+Use the file $auth_file for username and password.
+This uses User and Password instead of -A to be backwards
+compatible.
+
+=cut
+
+sub Auth
+  {
+  my ($self,$auth)=@_;
+  print "In auth with $auth\n" if ($self->{DEBUG});
+  if ($auth)
+    {
+    if (-r $auth)
+      {
+      open(AUTH, $auth) || die "Can't read $auth:$!\n";
+      while (<AUTH>)
+        {
+        if ($_ =~ /^(\w+)\s*=\s*(\w+)\s*$/)
+          {
+          my $key = $1;
+          my $value = $2;
+          if ($key =~ /^password$/i) {$_[0]->Password($value);}
+          elsif ($key =~ /^username$/i) {$_[0]->User($value);}
+          }
+        }
+      close(AUTH);
+      }
+    }
+  }
 
 =back
 
@@ -451,7 +536,7 @@ sub mget
   {
   my ($self, $file,$recurse) = @_;
   $file = ref($file) eq 'ARRAY' ? join (' ',@$file) : $file;
-  $recurse = 'recurse' if ($recurse);
+  $recurse ? $recurse = 'recurse' : $recurse = "" ;
   my $commande = "prompt off; $recurse; mget $file";
   return $self->operation($commande);
   }
@@ -489,7 +574,7 @@ Syntax:
 
 =cut
 
-sub mget
+sub mput
   {
   my ($self, $file,$recurse) = @_;
   $file = ref($file) eq 'ARRAY' ? join (' ',@$file) : $file;
@@ -510,10 +595,48 @@ on the server
 
 sub del
   {
-    my ($self, $masq,$dir, $host, $share, $user, $pass ) = @_;
-    my $commande = "del $masq";
-  $self->operation($commande,$dir, $host, $share, $user, $pass);
+      my ($self, $masq,$dir, $host, $share, $user, $pass ) = @_;
+      my $commande = "del $masq";
+      $self->operation($commande,$dir, $host, $share, $user, $pass);
   }
+
+
+=item rename($source, $target)
+
+rename source target
+The file matched by mask will be moved to target.  These names
+can be in differnet directories.  It returns a return value.
+
+=cut
+
+sub rename
+{
+    my ($self, $source, $target) = @_;
+    my $command = "rename $source $target";
+    my ($rc) = $self->operation($command);
+    return $rc;
+}
+
+=item pwd()
+
+pwd
+Returns the present working directory on the remote system.  If
+there is an error it returns undef.
+
+=cut
+
+sub pwd
+{
+    my ($self) = @_;
+    my $command = "pwd";
+    my ($error, @vars) = $self->operation($command);
+
+    foreach (@vars)
+      {if ($_ =~ /^\s*Current directory is \\\\.*?(\\.*)$/) {return $1; }}
+    return undef;
+}
+
+
 
 =back
 
@@ -588,7 +711,10 @@ sub operation
 sub command
   {
     my ($self,$args,$command)=@_;
-    print $args;
+    if ($self->{"DEBUG"} > 0)
+    {
+  print "$args\n";
+    }
     my $error=0;
     my @var = `$args`;# or die "system $args failed: $?,$!\n";
     my $var=join(' ',@var ) ;

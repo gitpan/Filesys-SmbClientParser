@@ -1,5 +1,22 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
 0.01  Sat Nov 18 23:03:04 2000
-	- original version; created by h2xs 1.19
+  - original version; created by h2xs 1.19
 
+Revision 0.2  2000/11/20 19:08:11  Administrateur
+ - Correct path of smbclient in new
+ - Correct arg when no password
+ - Correct error in synopsis
+
+Revision 0.3  2000/01/12 01:20:32  alian
+ - Add methods mget and mput
+
+Revision 1.2  2001/04/15 15:20:50  alian
+ - Correct mput subroutine wrongly defined as mget
+ - Added DEBUG level
+ - Add pod doc for User, Password, Share, Host
+ - Added rename and pwd method
+ - Changed $recurse in mget so that it is always defined after testing
+ - Added Auth() method, an alternative to explicit give of user/passwd
+ (like -A option in smbclient)
+Thanks to brian.graham@centrelink.gov.au for this features
