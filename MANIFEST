@@ -2,6 +2,7 @@ Changes
 MANIFEST
 Makefile.PL
 SmbClientParser.pm
-t/load.t
-t/test.t
+t/01load.t
+t/02new.t
+t/51test.t
 README

@@ -1,13 +1,19 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
+Revision 2.4  2002/11/08 23:51:19  alian
+ - Correct a bug that didn't set smbclient path when pass as arg of new.
+ (thanks to Andreas Dahl for report and patch).
+ - Correct a bug in error parsing that disable use of file or dir with
+ ERR in his name. Eg: JERRY. (Thanks to Jason Sloderbeck for report).
+ - Update test suite for tracking these bugs.
 
 2.3  2002/08/13 13:44:00;  author: alian;  state: Exp;  lines: +47 -28
-- Update smbclient detection (scan ENV{PATH} and try wich)
-- Update get, du method for perl -w mode
-- Update command method for perl -T mode
-- Update all exec command: add >&1 for Solaris output on STDERR
-- Add NT_STATUS_ message detection for error
-- Add Test::Simple tests like
+ - Update smbclient detection (scan ENV{PATH} and try wich)
+ - Update get, du method for perl -w mode
+ - Update command method for perl -T mode
+ - Update all exec command: add >&1 for Solaris output on STDERR
+ - Add NT_STATUS_ message detection for error
+ - Add Test::Simple tests like
 
 2.2  2002/08/08 23:28:22  alian
  - Correction bug sur option -N de smbclient (tks to reiffer@kph.uni-mainz.de)

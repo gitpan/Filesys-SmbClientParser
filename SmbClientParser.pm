@@ -5,6 +5,12 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.4  2002/11/08 23:51:19  alian
+# - Correct a bug that didn't set smbclient path when pass as arg of new.
+# (thanks to Andreas Dahl for report and patch).
+# - Correct a bug in error parsing that disable use of file or dir with
+# ERR in his name. Eg: JERRY. (Thanks to Jason Sloderbeck for report).
+#
 # Revision 2.3  2002/08/13 13:44:00  alian
 # - Update smbclient detection (scan path and try wich)
 # - Update get, du method for perl -w mode
@@ -31,37 +37,7 @@ package Filesys::SmbClientParser;
 # - Debug GetGroups method
 # - Debug case if share is defined in GetShare or GetHosts
 # - Add hash parameter to constructor
-#
-# Revision 1.5  2002/01/22 23:00:04  alian
-# - Correct a bug in workgroup parameter (tks to pedro@jazznet.pt for patch)
-#
-# Revision 1.4  2001/05/30 07:58:42  alian
-# - Add workgroup parameter (tkx to <ClarkJP@nswccd.navy.mil> for suggestion)
-# - Correct a bug with directory (double /) tks to  <erranp@go2net.com>
-# - Correct a bug with mput method : recurse used if needed <erranp@go2net.com>
-# - Correct quoting pb in get routine (tkx to <joetr@go2net.com>)
-# - Move and complete POD documentation
-#
-# Revision 1.3  2001/04/19 17:01:10  alian
-# - Remove CR/LF from 1.2 version (thanks to Sean Sirutis <seans@go2net.com>)
-#
-# Revision 1.2  2001/04/15 15:20:50  alian
-# - Correct mput subroutine wrongly defined as mget
-# - Added DEBUG level
-# - Add pod doc for User, Password, Share, Host
-# - Added rename and pwd method
-# - Changed $recurse in mget so that it is always defined after testing
-# - Added Auth() method, an alternative to explicit give of user/passwd
-# (like -A option in smbclient)
-# Thanks to brian.graham@centrelink.gov.au for this features
-#
-# Revision 0.3  2000/01/12 01:20:32  alian
-# - Add methods mget and mput
-#
-# Revision 0.2  2000/11/20 19:08:11  Administrateur
-# - Correct path of smbclient in new
-# - Correct arg when no password
-# - Correct error in synopsis
+
 
 use strict;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK);
@@ -70,7 +46,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.3 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.4 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -103,7 +79,7 @@ sub new
 	if (!-x $self->{SMBLIENT});
       goto 'ERROR' if (!-x $self->{SMBLIENT});
     }
-    else { $pat = $self->{SMBLIENT};}
+    else { $self->{SMBLIENT} = $pat;}
     # fix others parameters
     my %ref = @_;
     $self->Host($ref{host}) if ($ref{host});
@@ -792,8 +768,7 @@ sub command
       {$er="Cmd $command: A sharing buffer has been exceeded.";}
     elsif ($var=~/ERRDOS - 183 renaming files/)
       {$er="Cmd $command: File target already exist.";}
-    elsif ($var=~/ERR/)   
-      {$er="Cmd $command: reserved.";}
+#    elsif ($var=~/ERR/) {$er="Cmd $command: reserved.";}
     elsif ($var=~/(NT_STATUS_[^ \n]*)/ && $1 ne 'NT_STATUS_OK') {
       $er = $1; }
     $self->{LAST_REP} = \@var;
