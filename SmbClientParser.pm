@@ -5,6 +5,9 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.7  2004/04/14 21:53:18  alian
+# - fix rt#5896: Will Not work on shares that contain spaces in names
+#
 # Revision 2.6  2004/01/28 22:58:42  alian
 # - Fix Auth that only allow \w in password
 # - Fix mget & mput bug with ';' (reported by Nathan Vonnahme).
@@ -38,7 +41,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.6 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.7 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -512,10 +515,10 @@ sub rearrange_param {
   # Don't prompt for password
   elsif ($user && !$pass) {$user = '-U '.$user.' -N ';}
   # Server/share
-  my $path=' ';
+  my $path=' "';
   if ($host) {$host='//'.$host; $path.=$host; }
   if ($share) {$share='/'.$share;$path.=$share; }
-  $path.=' ';
+  $path.='" ';
   my $prefix = $self->{SMBLIENT}.$path.$user.$wg.$ip.$debug;
   return ($self, $command, $prefix, $dir);
 }
@@ -945,10 +948,11 @@ Remove the specified directory NAME from the server. NAME can be a pattern.
 
 =item get FILE, [TARGET, DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
 
-Gets the file FILE, using USER and PASSWORD, to TARGET on current SMB
-server and return the error code.
+Gets the file FILE from the server to the local machine, using USER and 
+PASSWORD, to TARGET on current SMB server and return the error code.
 
-If TARGET is unspecified, current directory will be used
+If TARGET is unspecified, current directory will be used.
+If specified, name the local copy TARGET.
 For use STDOUT, set target to '-'.
 
 =item del FILE, [DIR, HOSTNAME ,USER, PASSWORD, WORKGROUP, IP]
@@ -1086,7 +1090,7 @@ sort an array of hashes by $_->{name} (for GetSMBDir et al)
 
 =head1 VERSION
 
-$Revision: 2.6 $
+$Revision: 2.7 $
 
 =head1 TODO
 

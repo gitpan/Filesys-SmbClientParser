@@ -1,5 +1,8 @@
 Revision history for Perl extension Filesys::SmbClientParser.
 
+2.7  2004/04/14 21:53:18  alian
+- fix rt#5896: Will Not work on shares that contain spaces in names
+
 2.6  2004/01/28 22:58:42  alian
 - Fix Auth that only allow \w in password
 - Fix mget & mput bug with ';' (reported by Nathan Vonnahme).
