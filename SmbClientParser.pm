@@ -5,6 +5,13 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.3  2002/08/13 13:44:00  alian
+# - Update smbclient detection (scan path and try wich)
+# - Update get, du method for perl -w mode
+# - Update command method for perl -T mode
+# - Update all exec command: add >&1 for Solaris output on STDERR
+# - Add NT_STATUS_ message detection for error
+#
 # Revision 2.2  2002/08/08 23:28:22  alian
 # - Correction bug sur option -N de smbclient (tks to reiffer@kph.uni-mainz.de)
 #
@@ -63,7 +70,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.2 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.3 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -73,25 +80,30 @@ sub new
     my $class = shift;
     my $self = {};
     bless $self, $class;
+    sub search_it {
+      my $self = shift;
+      foreach my $p (@_) {	
+	if (-x "$p/smbclient") {
+	  $self->{SMBLIENT} = $p."/smbclient";
+	  last;
+	}
+      }
+    }
     # Search path of smbclient
     my $pat = shift;
-    if (!$pat)
-      {
-	if (-x '/usr/bin/smbclient') 
-	  {$self->{SMBLIENT} = '/usr/bin/smbclient';}
-	elsif (-x '/usr/local/bin/smbclient') 
-	  {$self->{SMBLIENT} = '/usr/local/bin/smbclient';}
-	elsif (-x '/opt/bin/smbclient') 
-	  {$self->{SMBLIENT} = '/opt/bin/smbclient';}
-	elsif (-x '/usr/local/samba/bin/smbclient') 
-	  {$self->{SMBLIENT} = '/usr/local/samba/bin/smbclient';}
-	else {goto 'ERROR';}
-      }
-    else
-      {
-	  if (-x $pat) {$self->{SMBLIENT}=$pat;}
-	  else {goto 'ERROR';}
-      }
+    my @common = qw!/usr/bin /usr/local/bin /opt/bin /opt/local/bin 
+                    /usr/local/samba/bin /usr/pkg/bin!;
+    if (!$pat or !(-x $pat)) {
+      # Try common location
+      $self->search_it(@common);
+      # Try path
+      $self->search_it(split(/:/,$ENV{PATH})) if (!-x $self->{SMBLIENT});
+      # May be taint mode ...
+      $self->search_it(split(/:/,`which smbclient`)) 
+	if (!-x $self->{SMBLIENT});
+      goto 'ERROR' if (!-x $self->{SMBLIENT});
+    }
+    else { $pat = $self->{SMBLIENT};}
     # fix others parameters
     my %ref = @_;
     $self->Host($ref{host}) if ($ref{host});
@@ -353,15 +365,15 @@ sub mkdir
 #------------------------------------------------------------------------------
 # get
 #------------------------------------------------------------------------------
-sub get
-  {
-    my $self   = shift; 
-    my $file   = shift;
-    my $target = shift;
-    $file =~ s/^(.*)\/([^\/]*)$/$1$2/ ;
-    my $commande = "get \"$file\" $target";
+sub get  {
+  my $self   = shift; 
+  my $file   = shift;
+  my $target = shift;
+  $file =~ s/^(.*)\/([^\/]*)$/$1$2/ ;
+  my $commande = "get \"$file\" ";
+  $commande.=$target if ($target);
   return $self->operation($commande,@_);
-  }
+}
 
 #------------------------------------------------------------------------------
 # mget
@@ -484,7 +496,7 @@ sub du
       {die "Invalid argument for blocksize: $blk\n";}
     $blksize ||= 1024;          ## Default to 1Kbyte blocks
 
-    $dir =~ s#(.*)(^|/)\.(/|$)(.*)#$1$2$4#g;
+    $dir =~ s#(.*)(^|/)\.(/|$)(.*)#$1$2$4#g if ($dir);
     $dir = $self->{DIR} unless ($dir);
 
     my $cmd = "du $dir/*";
@@ -608,11 +620,16 @@ sub byname {(lc $a->{name}) cmp (lc $b->{name})}
 sub command
   {
     my ($self,$args,$command)=@_;
+    $command.=" >&1";
     if ($self->{"DEBUG"} > 0)
       { print " ==> SmbClientParser::command $args\n"; }
     my $er;
-    my @var = `$args`;# or die "system $args failed: $?,$!\n";
+    my $pargs;
+    $pargs = $1 if ($args=~/([^;]*)/);
+    my @var = `$pargs`;# or die "system $args failed: $?,$!\n";
     my $var=join(' ',@var ) ;
+    # Quick return if no answer
+    return 1 if (!$var);
     if ($var=~/ERRnoaccess/)   
       {$er="Cmd $command: permission denied";}
     elsif ($var=~/ERRbadfunc/)   
@@ -777,6 +794,8 @@ sub command
       {$er="Cmd $command: File target already exist.";}
     elsif ($var=~/ERR/)   
       {$er="Cmd $command: reserved.";}
+    elsif ($var=~/(NT_STATUS_[^ \n]*)/ && $1 ne 'NT_STATUS_OK') {
+      $er = $1; }
     $self->{LAST_REP} = \@var;
     $self->{LAST_ERR} = $er if ($er);
   return (defined($er) ? undef : 1);
@@ -1155,6 +1174,10 @@ sort an array of hashes by $_->{name} (for GetSMBDir et al)
 =item command($args,$command)
 
 =back
+
+=head1 TODO
+
+Write a wrapper for ActiveState release on win32
 
 =head1 AUTHOR
 

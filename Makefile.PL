@@ -3,9 +3,9 @@ use strict;
 
 # tests demande ?
 my $ans = 
-  prompt("Do you want make tests ?(you will be prompted for server / \n".
-	   "worgroup / share / user / password to make read write access.",
-	   "yes");
+  prompt("Do you want make smbclient tests ?\n".
+   "(you will be prompted for server / worgroup / share / user / password\n".
+   "to make read write access.", "no");
 if ($ans =~ /^y(es)?$/i) 
   {
     my $server = prompt("Server ?","localhost");
@@ -21,9 +21,11 @@ if ($ans =~ /^y(es)?$/i)
 
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
-WriteMakefile(
-    'NAME'	=> 'Filesys::SmbClientParser',
-    'VERSION_FROM' => 'SmbClientParser.pm', # finds $VERSION
+WriteMakefile
+  (
+   'NAME'	=> 'Filesys::SmbClientParser',
+   'VERSION_FROM' => 'SmbClientParser.pm', # finds $VERSION
+   'PREREQ_PM'	  => { 'Test::Simple' => 0}, # e.g., Module::Name => 1.1
      ($] ge '5.005') ? 
 		  (
 		   'AUTHOR' => 'Alain BARBET (alian@cpan.org)',
