@@ -5,6 +5,9 @@ package Filesys::SmbClientParser;
 # Copyright 2000-2002 A.Barbet alian@alianwebserver.com.  All rights reserved.
 
 # $Log: SmbClientParser.pm,v $
+# Revision 2.2  2002/08/08 23:28:22  alian
+# - Correction bug sur option -N de smbclient (tks to reiffer@kph.uni-mainz.de)
+#
 # Revision 2.1  2002/04/11 23:39:34  alian
 # - Add du method  (thanks to Ben Scott <scotsman@CSUA.Berkeley.EDU>)
 # - Correct pwd method
@@ -60,7 +63,7 @@ require Exporter;
 
 @ISA = qw(Exporter);
 @EXPORT = qw();
-$VERSION = ('$Revision: 2.1 $ ' =~ /(\d+\.\d+)/)[0];
+$VERSION = ('$Revision: 2.2 $ ' =~ /(\d+\.\d+)/)[0];
 
 #------------------------------------------------------------------------------
 # new
@@ -493,8 +496,7 @@ sub du
         if ($line =~ /^\s*(\d+)\D+(\d+)\D+(\d+)\D+$/)
           {
             my $blksz = (defined $2) ? $2 : 512 * 1024;
-		$rec->{blks}  = $1 * ($blksz / $blksize);
-            $rec->{ublks} = ($1 - $3) * ($blksz / $blksize);
+            $rec->{ublks} = $1 * ($blksz / $blksize);
             $rec->{fblks} = $3 * ($blksz / $blksize);
             $rec->{blksz} = $blksize;
           }
@@ -546,8 +548,8 @@ sub operation
     ($dir ? ($dir=' -D "'.$dir.'"') : ($dir= ' '));
     # User / Password
     if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass.' '; }
-    elsif ($user) {$user = '-U '.$user.' ';}
-    elsif (!$pass) {$user = "-N " }
+    # Don't prompt for password
+    elsif ($user && !$pass) {$user = '-U '.$user.' -N ';}
     # Server/share
     my $path=' ';
     if ($host) {$host='//'.$host; $path.=$host; }
@@ -582,8 +584,8 @@ sub commande
     (($dir) ? ($dir=' -D "'.$dir.'"') : ($dir= ' '));
     # User / Password
     if (($user)&&($pass)) { $user = '-U '.$user.'%'.$pass.' '; }
-    elsif ($user) {$user = '-U '.$user.' ';}
-    elsif (!$pass) {$user = "-N " }
+    # Don't prompt for password
+    elsif ($user && !$pass) {$user = '-U '.$user.' -N ';}
     # Server/Share
     my $path=' ';
     if ($host) {$host='//'.$host; $path.=$host; }
@@ -1068,12 +1070,9 @@ If no unit given, k is used (1kb bloc)
 In scalar context, return the total size in units for files in 
 current directory.
 
-In array context, return a list with :
-total size in units for files in partition of share,
-total size in units for files in directory,
-size left in units for partition of share,
-block size used in bytes (unit),
-total size in units for files in partition of share
+In array context, return a list with total size in units for files in 
+directory, size left in partition of share, block size used in bytes,
+total size of partition of share.
 
 =item mget($file,[$recurse])
 

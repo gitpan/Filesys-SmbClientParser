@@ -148,9 +148,10 @@ $smb->get($f."toto(tata")
   : ( ++$courant && print "ok 20 Get unexistant file\n");
 
 # Final result
+my $finalcut = 0;
 ($courant == $total_test) 
   ? ( print "All SMB test successful !\n\n")
-  : ( print "Some SMB tests fails !\n\n");
+  : ( $finalcut = 1 && print "Some SMB tests fails !\n\n");
 
 unlink($f.'_2');
 unlink($f);
@@ -166,3 +167,5 @@ print "HOSTS:\n\tName\t\tComment\n";
 foreach ($smb->GetHosts)  {print "\t",$_->{name},"\t\t",$_->{comment},"\n";}
 print "ON ",$smb->Host," i've found SHARE:\n\tName\n";
 foreach ($smb->GetShr)    {print "\t",$_->{name},"\n";}
+
+exit($finalcut);
